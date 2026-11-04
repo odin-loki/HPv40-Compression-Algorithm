@@ -1,0 +1,26 @@
+no_m8       - 1 exp  total   945160  -0.001%  worst  +0.05% (nci.t)  best  -0.01%  cpu   -1.0%  rss   683 MB
+base        - 0 exp  total   945166  +0.000%  worst  +0.00% (dickens.t)  best  +0.00%  cpu   +0.0%  rss   689 MB
+no_link     - 2 exp  total   945190  +0.003%  worst  +0.05% (enwik8_60m.t)  best  -0.02%  cpu   -2.8%  rss   685 MB
+no_num      - 2 exp  total   945214  +0.005%  worst  +0.06% (webster.t)  best  -0.02%  cpu   -2.9%  rss   688 MB
+no_hebb     - 1 exp  total   945217  +0.005%  worst  +0.04% (xml.t)  best  -0.02%  cpu   -0.4%  rss   689 MB
+no_m5       - 1 exp  total   945222  +0.006%  worst  +0.03% (samba.t)  best  -0.02%  cpu   -1.6%  rss   683 MB
+no_sen      - 2 exp  total   945305  +0.015%  worst  +0.07% (enwik8_60m.t)  best  -0.02%  cpu   -4.5%  rss   685 MB
+no_wm4      - 1 exp  total   945317  +0.016%  worst  +0.11% (nci.t)  best  +0.00%  cpu   -2.7%  rss   688 MB
+no_wstr     - 2 exp  total   945427  +0.028%  worst  +0.14% (osdb.t)  best  -0.03%  cpu   -3.5%  rss   685 MB
+no_sentmem  - 2 exp  total   945516  +0.037%  worst  +0.12% (nci.t)  best  -0.00%  cpu   -6.3%  rss   688 MB
+no_wm       - 4 exp  total   945775  +0.064%  worst  +0.43% (nci.t)  best  -0.00%  cpu   -5.1%  rss   684 MB
+no_tag      - 2 exp  total   945990  +0.087%  worst  +0.60% (xml.t)  best  -0.03%  cpu   -5.5%  rss   685 MB
+no_sentst   - 2 exp  total   946043  +0.093%  worst  +0.61% (nci.t)  best  -0.02%  cpu   -5.5%  rss   681 MB
+no_sutf8    - 1 exp  total   946141  +0.103%  worst  +0.44% (ooffice.t)  best  +0.00%  cpu   -3.4%  rss   683 MB
+no_wbi      - 2 exp  total   946358  +0.126%  worst  +0.73% (dickens.t)  best  -0.03%  cpu   -9.4%  rss   433 MB
+lite_L3     -None exp  total   946371  +0.127%  worst  +0.41% (samba.t)  best  -0.20%  cpu  -15.2%  rss   663 MB
+no_brk      - 2 exp  total   946526  +0.144%  worst  +0.62% (enwik8_60m.t)  best  -0.02%  cpu   -2.6%  rss   688 MB
+no_m12      - 2 exp  total   947440  +0.241%  worst  +0.58% (mozilla.t)  best  -0.04%  cpu   -3.1%  rss   677 MB
+no_col      - 2 exp  total   947497  +0.247%  worst +11.66% (nci.t)  best  -0.02%  cpu   -4.2%  rss   689 MB
+lite_L5     -None exp  total   947861  +0.285%  worst  +0.87% (dickens.t)  best  -0.20%  cpu  -18.0%  rss   407 MB
+no_sp       - 4 exp  total   949118  +0.418%  worst  +2.09% (ooffice.t)  best  +0.02%  cpu   -7.9%  rss   688 MB
+lite_L1     -None exp  total   955983  +1.144%  worst  +3.78% (xml.t)  best  -0.12%  cpu  -28.4%  rss   385 MB
+disc4       -16 exp  total   956686  +1.219%  worst  +3.27% (sao.t)  best  -0.17%  cpu  -27.1%  rss   685 MB
+lite_L4     -None exp  total   959175  +1.482%  worst  +2.96% (ooffice.t)  best  -0.05%  cpu  -43.2%  rss   403 MB
+disc1       -22 exp  total   959921  +1.561%  worst  +4.24% (sao.t)  best  -0.26%  cpu  -37.4%  rss   683 MB
+lite_L2     -None exp  total   967422  +2.355%  worst  +4.69% (xml.t)  best  -0.10%  cpu  -52.1%  rss   380 MB

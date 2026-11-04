@@ -1,0 +1,109 @@
+--- a/hp/include/hp/predictor.hpp	2026-11-03 20:38:41.513024916 +0000
++++ b/hp/include/hp/predictor.hpp	2026-11-03 20:45:28.889033316 +0000
+@@ -57,6 +57,23 @@
+ #define HP_USE_ENT_GATE 1
+ #endif
+ 
++#ifndef HP_CM_SP
++#define HP_CM_SP 1    // sp13/sp24 sparse CMs as experts (lite lab switch)
++#endif
++#ifndef HP_CM_COL
++#define HP_CM_COL 1
++#endif
++#ifndef HP_CM_TAG
++#define HP_CM_TAG 1
++#endif
++#ifndef HP_CM_WBI
++#define HP_CM_WBI 1
++#endif
++#ifndef HP_HEBB_EXPERT
++#define HP_HEBB_EXPERT 1
++#endif
++#define HP_TINY_BITS 16  // table bits for a model that is switched off
++
+ namespace hp {
+ 
+ struct Config {
+@@ -91,7 +108,8 @@
+         (HP_SENWORD ? 1 : 0) +
+         (HP_SENT_STREAM ? 1 : 0) +
+         (HP_SENT_MEM ? 1 : 0);
+-    static constexpr int kCtxModels = 11 + kExtraCtx;
++    static constexpr int kCtxModels = 6 + (HP_CM_SP ? 2 : 0) + (HP_CM_COL ? 1 : 0)
++        + (HP_CM_TAG ? 1 : 0) + (HP_CM_WBI ? 1 : 0) + kExtraCtx;
+     static constexpr int kMatchModels = 5 + (HP_MATCH_18 ? 1 : 0)
+         + (HP_MATCH_13 ? 1 : 0) + (HP_MATCH_01 ? 1 : 0)
+         + (HP_MATCH_02 ? 1 : 0) + (HP_MATCH_05 ? 1 : 0)
+@@ -105,7 +123,7 @@
+     static constexpr int kBaseExperts =
+         kCtxModels * ContextModel::kOutputs + 1 /*bias*/ + kMatchModels
+         + kWordMatch + (HP_SPARSE_UTF8 ? 1 : 0)
+-        + 1 /*hebb*/ + kCtw + kDiscovered;
++        + (HP_HEBB_EXPERT ? 1 : 0) /*hebb*/ + kCtw + kDiscovered;
+ #if HP_HEDGE_L1
+     static constexpr int kHedgeInputs = 0;
+ #else
+@@ -250,11 +268,11 @@
+                        + (HP_SLOT_O6G ? 1 : 0) + (HP_SLOT_O6H ? 1 : 0)
+                        + (HP_SLOT_O6I ? 1 : 0) + (HP_SLOT_O6J ? 1 : 0)), 127),
+           word_(slot_bits(cfg.table_bits, 1), 255),
+-          col_(slot_bits(cfg.table_bits, HP_SLOT_COL2 ? 2 : 0), 255),
+-          tag_(slot_bits(cfg.table_bits, 2), 255),
+-          wbi_(slot_bits(cfg.table_bits, 1), 255),
+-          sp13_(add_bits(slot_bits(cfg.table_bits, 0), HP_SLOT_SP ? 1 : 0), 255),
+-          sp24_(add_bits(slot_bits(cfg.table_bits, 0), HP_SLOT_SP ? 1 : 0), 255),
++          col_(HP_CM_COL ? slot_bits(cfg.table_bits, HP_SLOT_COL2 ? 2 : 0) : HP_TINY_BITS, 255),
++          tag_(HP_CM_TAG ? slot_bits(cfg.table_bits, 2) : HP_TINY_BITS, 255),
++          wbi_(HP_CM_WBI ? slot_bits(cfg.table_bits, 1) : HP_TINY_BITS, 255),
++          sp13_(HP_CM_SP ? add_bits(slot_bits(cfg.table_bits, 0), HP_SLOT_SP ? 1 : 0) : HP_TINY_BITS, 255),
++          sp24_(HP_CM_SP ? add_bits(slot_bits(cfg.table_bits, 0), HP_SLOT_SP ? 1 : 0) : HP_TINY_BITS, 255),
+ #if HP_WORD_STREAMS
+           wstr_sp_(slot_bits(cfg.table_bits, HP_SLOT_WSTR2 ? 2 : 0), 255),
+ #endif
+@@ -381,11 +399,19 @@
+         chain[nchain++] = &o4_;
+         chain[nchain++] = &o6_;
+         chain[nchain++] = &word_;
++#if HP_CM_SP
+         chain[nchain++] = &sp13_;
+         chain[nchain++] = &sp24_;
++#endif
++#if HP_CM_COL
+         chain[nchain++] = &col_;
++#endif
++#if HP_CM_TAG
+         chain[nchain++] = &tag_;
++#endif
++#if HP_CM_WBI
+         chain[nchain++] = &wbi_;
++#endif
+ #if HP_WORD_STREAMS
+         chain[nchain++] = &wstr_sp_;
+ #endif
+@@ -447,11 +473,13 @@
+             exp_p_[n_exp_++] = squash(ms);
+         }
+ #endif
++#if HP_HEBB_EXPERT
+         {
+             const int hs = hebb_.predict(c0_);
+             mixer_.add(hs);
+             exp_p_[n_exp_++] = squash(hs);
+         }
++#endif
+ #if HP_CTW
+         {
+             // Recursive KT weighting over the contiguous order chain.
+@@ -601,8 +629,10 @@
+         const int ens = pr_final_;
+         o1_.update(y, ens); o2_.update(y, ens); o3_.update(y, ens);
+         o4_.update(y, ens); o6_.update(y, ens); word_.update(y, ens);
+-        sp13_.update(y, ens); sp24_.update(y, ens);
+-        col_.update(y, ens); tag_.update(y, ens); wbi_.update(y, ens);
++        if (HP_CM_SP) { sp13_.update(y, ens); sp24_.update(y, ens); }
++        if (HP_CM_COL) col_.update(y, ens);
++        if (HP_CM_TAG) tag_.update(y, ens);
++        if (HP_CM_WBI) wbi_.update(y, ens);
+ #if HP_WORD_STREAMS
+         wstr_sp_.update(y, ens);
+ #endif

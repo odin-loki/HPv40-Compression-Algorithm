@@ -1,0 +1,15 @@
+{
+ "cmd": [
+  "/tmp/claude-0/-home-user-Cypha/c53a732b-8996-53d7-a197-9129e2b4510f/scratchpad/lab/../buildtest/hp40",
+  "d",
+  "v40_e8.hp",
+  "v40_e8.dec"
+ ],
+ "rc": 0,
+ "wall": 779.0317876090012,
+ "user": 742.520597,
+ "sys": 28.640557,
+ "maxrss_kb": 11157892,
+ "stdout": "",
+ "stderr": "\r1 MB\r2 MB\r3 MB\r4 MB\r5 MB\r6 MB\r7 MB\rdecompressed 8388608 B\n"
+}

@@ -1,0 +1,180 @@
+{
+ "components": {
+  "context models (hash CMs)": 40.010000000000005,
+  "mixer (layer 1 + 2)": 21.830000000000002,
+  "squash/stretch/log math": 20.25,
+  "libc / other": 8.829999999999998,
+  "byte match models": 2.76,
+  "predictor glue (predict/update/contexts)": 2.7,
+  "APM / SSE": 1.09,
+  "discovery pool": 0.79,
+  "kernel: page zeroing / faults": 0.4000000000000001,
+  "word match models": 0.37,
+  "text state machines (wiki, bracket, numeric, streams, pattern)": 0.30000000000000004,
+  "Hebbian": 0.22,
+  "GRIA gate": 0.16999999999999998,
+  "arithmetic coder": 0.09
+ },
+ "top_symbols": [
+  [
+   30.23,
+   "[.] hp::ContextModel::predict(int, int, int*)"
+  ],
+  [
+   12.94,
+   "[.] hp::MixerNet::mix()"
+  ],
+  [
+   12.92,
+   "[.] hp::log2_q16(unsigned int)"
+  ],
+  [
+   6.72,
+   "[.] hp::MixerNet::update(int)"
+  ],
+  [
+   4.61,
+   "[.] hp::py_estimate(int, int, int)"
+  ],
+  [
+   3.38,
+   "[.] hp::clamp_int(int, int, int)"
+  ],
+  [
+   2.87,
+   "[.] hp::Hedge::update(int, unsigned int)"
+  ],
+  [
+   2.76,
+   "[.] hp::StateMap::update(int, int, int)"
+  ],
+  [
+   2.48,
+   "[.] hp::squash(int)"
+  ],
+  [
+   2.22,
+   "[.] hp::Predictor::predict()"
+  ],
+  [
+   2.17,
+   "[.] std::vector<int, std::allocator<int> >::operator[](unsigned long) [clone .isra.0]"
+  ],
+  [
+   1.3,
+   "[.] hp::MatchModel::predict(int, int)"
+  ],
+  [
+   1.25,
+   "[.] hp::MatchModel::push_byte(int, unsigned long)"
+  ],
+  [
+   1.13,
+   "[.] hp::StateMap::predict(int)"
+  ],
+  [
+   1.12,
+   "[.] hp::MixerNet::set_ctx(int, int)"
+  ],
+  [
+   0.9,
+   "[.] hp::APM::refine(int, int)"
+  ],
+  [
+   0.85,
+   "[.] hp::ContextModel::update(int, int)"
+  ],
+  [
+   0.77,
+   "[.] hp::MixerNet::add(int)"
+  ],
+  [
+   0.72,
+   "[.] hp::argmax_bin(int const*, int)"
+  ],
+  [
+   0.67,
+   "[.] hp::counter_update(hp::Counter&, int, int)"
+  ],
+  [
+   0.56,
+   "[.] hp::Hedge::set(int, int)"
+  ],
+  [
+   0.53,
+   "[.] hp::Hedge::mix()"
+  ],
+  [
+   0.49,
+   "[.] hp::StretchTable::operator()(int) const"
+  ],
+  [
+   0.45,
+   "[.] hp::DiscoveryPool::update(int, int)"
+  ],
+  [
+   0.42,
+   "[.] hp::stretch(int)"
+  ],
+  [
+   0.37,
+   "[.] hp::Predictor::update(int)"
+  ],
+  [
+   0.33,
+   "[.] hp::stretch_table()"
+  ],
+  [
+   0.26,
+   "[.] hp::state_table()"
+  ],
+  [
+   0.25,
+   "[.] std::vector<unsigned int, std::allocator<unsigned int> >::operator[](unsigned long) [clone .isra.0]"
+  ],
+  [
+   0.2,
+   "[.] hp::PatternCache::hash_memo(unsigned long, unsigned long)"
+  ],
+  [
+   0.19,
+   "[.] hp::APM::update(int, int)"
+  ],
+  [
+   0.19,
+   "[k] clear_page_erms"
+  ],
+  [
+   0.19,
+   "[.] hp::DiscoveryPool::predict(int, int, int*)"
+  ],
+  [
+   0.19,
+   "[.] hp::mix64(unsigned long)"
+  ],
+  [
+   0.18,
+   "[.] hp::WordMatchModel::predict(int, int)"
+  ],
+  [
+   0.18,
+   "[.] std::vector<unsigned short, std::allocator<unsigned short> >::operator[](unsigned long) [clone .isra.0]"
+  ],
+  [
+   0.17,
+   "[.] hp::MatchModel::update(int)"
+  ],
+  [
+   0.17,
+   "[.] hp::MixerNet::layer1_p(int) const"
+  ],
+  [
+   0.16,
+   "[.] hp::HebbianModel::set_context(unsigned long)"
+  ],
+  [
+   0.15,
+   "[.] __gnu_cxx::__enable_if<std::__is_scalar<unsigned short>::__value, void>::__type std::__fill_a1<unsigned short*, unsigned short>(unsigned short*, unsigned short*, unsigned short const&) [clone .isra.0]"
+  ]
+ ]
+}

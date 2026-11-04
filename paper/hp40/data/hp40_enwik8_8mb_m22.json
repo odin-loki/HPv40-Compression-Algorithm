@@ -1,0 +1,17 @@
+{
+ "cmd": [
+  "/tmp/claude-0/-home-user-Cypha/c53a732b-8996-53d7-a197-9129e2b4510f/scratchpad/lab/bin/hp_v40",
+  "c",
+  "--mem",
+  "22",
+  "/tmp/claude-0/-home-user-Cypha/c53a732b-8996-53d7-a197-9129e2b4510f/scratchpad/lab/../corpora/enwik8.8mb",
+  "v40_e8.hp"
+ ],
+ "rc": 0,
+ "wall": 901.5622700470001,
+ "user": 807.582633,
+ "sys": 84.444573,
+ "maxrss_kb": 11157916,
+ "stdout": "",
+ "stderr": "\r1 MB\r2 MB\r3 MB\r4 MB\r5 MB\r6 MB\r7 MB\rin 8388608 B  out 1721462 B  (hdr+dict 29)  bpc 1.641\n"
+}

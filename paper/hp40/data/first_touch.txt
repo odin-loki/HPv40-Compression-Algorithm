@@ -1,0 +1,7 @@
+# bin/touch (scripts/touch.cpp): std::vector<uint8_t>(N, 0) first-touch vs second memset, this VM, 2026-11-03
+2.0 GiB first-touch 1.51 s (1.32 GiB/s)  re-write 0.44 s (4.50 GiB/s)
+4.0 GiB first-touch 3.02 s (1.32 GiB/s)  re-write 0.91 s (4.42 GiB/s)
+6.0 GiB first-touch 4.34 s (1.38 GiB/s)  re-write 1.34 s (4.46 GiB/s)
+8.0 GiB first-touch 15.50 s (0.52 GiB/s)  re-write 1.87 s (4.29 GiB/s)
+10.5 GiB first-touch 25.61 s (0.41 GiB/s)  re-write 2.52 s (4.16 GiB/s)
+# grammar.lsp (3,721 B) at --mem 22: HP40 36.0 s wall (33.7 s sys, 10,880 MiB); HP40-Lite 4.9-5.2 s wall (3.8-3.9 s sys, 6,300 MiB)
