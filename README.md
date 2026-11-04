@@ -15,6 +15,8 @@ everyday context-mixing compressor built from what that study found.
 | path | what |
 |---|---|
 | [`compress/hpd/`](compress/hpd/) | hpd: source, build, tests, archive format ([README](compress/hpd/README.md)) |
+| [`paper/hp40/HP40_hpd_paper.pdf`](paper/hp40/HP40_hpd_paper.pdf) | the paper, Parts I and II as one (25 pages) |
+| [`zenodo/`](zenodo/) | Zenodo upload package builder and instructions ([`UPLOAD.md`](zenodo/UPLOAD.md)) |
 | [`dist/`](dist/) | `hpd-1.2.0-src.zip`, the hpd source package referenced by the paper |
 | [`paper/hp40/`](paper/hp40/) | the paper: Part I [`HP40_paper.md`](paper/hp40/HP40_paper.md) (HP40 / HP40-Lite profiling and expert mining), Part II [`HPD_part2.md`](paper/hp40/HPD_part2.md) (hpd), plus all data, figures and scripts ([README](paper/hp40/README.md)) |
 

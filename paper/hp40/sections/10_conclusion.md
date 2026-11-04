@@ -53,7 +53,7 @@ python3 paper/hp40/scripts/gen_tables.py && python3 paper/hp40/scripts/make_figu
 ```
 
 Corpora: enwik8 (mattmahoney.net / data.deepai.org mirror), Canterbury
-(`bench/data/canterbury/cantrbry.tar.gz` in this repo), the large Calgary
+(corpus.canterbury.ac.nz), the large Calgary
 corpus (data-compression.info), Silesia (sun.aei.polsl.pl). `enwik8.8mb` is
 `head -c 8388608 enwik8` (SHA-256 `09f6dd72…ee8e`); Silesia-1M is
 `head -c 1048576` of each Silesia file; the tuning set is
