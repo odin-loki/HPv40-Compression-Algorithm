@@ -9,3 +9,4 @@ Makefile text eol=lf
 *.png binary
 *.pdf binary
 *.npz binary
+*.zip binary

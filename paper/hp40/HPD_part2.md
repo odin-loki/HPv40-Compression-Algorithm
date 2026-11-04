@@ -1,6 +1,6 @@
 # Part II — hpd: turning HP40 into a day-to-day compressor
 
-**Author:** Odin Loch (with Claude Code) · **Date:** 2026-11-04 · **Code:** [`compress/hpd/`](../../compress/hpd/)
+**Author:** Odin Loch (with Claude Code) · **Date:** 2026-11-04 · **Code:** [`compress/hpd/`](../../compress/hpd/) · **Source package:** [`dist/hpd-1.0.0-src.zip`](../../dist/hpd-1.0.0-src.zip) (§9)
 **Follows:** [`HP40_paper.md`](HP40_paper.md) (Part I: profiling and data-mining HP40 / HP40-Lite)
 
 Part I found that HP40 compresses general data 20% better than xz -9e but is
@@ -228,6 +228,40 @@ among CM compressors is not measured here.
   missing word/sentence experts; −1.55% overall only because of the binary
   wins). Restoring HP40's text experts, now affordable, is the obvious next
   step.
-* **No partial-stream bypass.** A tar with a few compressed members still
-  models those members bit by bit; only whole blocks fall back to stored.
-* **One file in, one file out.** No directory archiving or stdin/stdout yet.
+* **No partial-stream bypass** in the measured build. A tar with a few
+  compressed members still models those members bit by bit; only whole
+  blocks fall back to stored. *Fixed in hpd 1.0.0 (§9):* 64 KiB chunks of
+  incompressible data inside a block are copied unmodelled.
+* **One file in, one file out.** No directory archiving. *hpd 1.0.0 adds
+  stdin/stdout*, so `tar cf - dir | hpd c - -` covers directories.
+
+## 9. Source code
+
+The complete hpd source is packaged as
+[`dist/hpd-1.0.0-src.zip`](../../dist/hpd-1.0.0-src.zip)
+(106,316 bytes, 37 files, SHA-256
+`e3567cbfbfa61b2e01530a428445115db956af1b9f1c2eb3edc5000294ef52f5`).
+It holds `src/`, `include/hp/`, the Makefile, the README with the archive
+format, the round-trip and fuzz tests, the benchmark runners and the AGPL-3.0
+licence. To build and test:
+
+```bash
+unzip hpd-1.0.0-src.zip && cd hpd-1.0.0
+make && make test            # needs a C++20 compiler (GCC 13 tested)
+build/hpd c FILE && build/hpd t FILE.hpd
+```
+
+The zip is built from the git tree by `compress/hpd/tools/make_src_zip.py`
+(fixed timestamps, LF line endings), so the same tree always gives the same
+bytes and the hash above can be re-checked.
+
+**Version measured vs. version packaged.** The numbers in §§2–7 were
+measured with the archive-format-2 build. hpd 1.0.0 keeps the same model
+and changes only the container and the tooling: a CRC-32 per block and per
+stream, a streaming end marker, pass-through of incompressible 64 KiB chunks,
+`t`/`l` commands, stdin/stdout, and decoder limit checks. On files with no
+passed-through chunks its archives are exactly 7 bytes larger for a
+single-block file (5 bytes per block, 2 per archive), checked on this paper's
+text, the hpd binary and a PNG figure. hpd 1.0.0 still decodes format-2
+archives. Its decoder passed 2,000 mutated archives from `test/fuzz.sh`
+with no crash and no wrong output.

@@ -1,7 +1,8 @@
 # HP40 / HP40-Lite general-purpose compression study
 
 **Paper:** [`HP40_paper.md`](HP40_paper.md) (Part I, assembled from `sections/` by `scripts/assemble.py`) and
-[`HPD_part2.md`](HPD_part2.md) (Part II: hpd, the improved compressor in [`compress/hpd/`](../../compress/hpd/)).
+[`HPD_part2.md`](HPD_part2.md) (Part II: hpd, the improved compressor in [`compress/hpd/`](../../compress/hpd/);
+source package [`dist/hpd-1.0.0-src.zip`](../../dist/hpd-1.0.0-src.zip)).
 
 HP40 is champion v40 of the `hp` context-mixing lab
 ([odin-loki/CompressionAlgorithm](https://github.com/odin-loki/CompressionAlgorithm)).
