@@ -1,6 +1,6 @@
 # Part II — hpd: turning HP40 into a day-to-day compressor
 
-**Author:** Odin Loch (with Claude Code) · **Date:** 2026-11-04 · **Code:** [`compress/hpd/`](../../compress/hpd/) · **Source package:** [`dist/hpd-1.2.0-src.zip`](../../dist/hpd-1.2.0-src.zip) (§9)
+**Author:** Odin Loch (with Claude Code) · **Date:** 2026-11-05 · **Code:** [`compress/hpd/`](../../compress/hpd/) · **Source package:** [`dist/hpd-1.2.0-src.zip`](../../dist/hpd-1.2.0-src.zip) (§9)
 **Follows:** [`HP40_paper.md`](HP40_paper.md) (Part I: profiling and data-mining HP40 / HP40-Lite)
 
 Part I found that HP40 compresses general data 20% better than xz -9e but is
@@ -29,6 +29,12 @@ is a 13 KB English paper, where brotli's built-in dictionary wins by 38 bytes.
 The x86, record-structured and image files where HP40 was weakest are now
 its largest wins. On text it remains 0–1.8% behind full HP40. Every
 archive in every run decoded byte-exactly.
+
+hpd also runs on an NVIDIA GPU (§10). The GPU build writes archives
+byte-identical to the CPU build, but an RTX 3090 only reaches 0.84–0.95× the
+speed of the 64-thread CPU it was tested against. It also needs shards of
+16–64 KiB, which make archives 27–45% larger. On this model the CPU is the
+better place to run.
 
 ## 1. Method
 
@@ -320,3 +326,23 @@ thousands of shards resident, so per-shard state near 0.7 MB instead of 19 MB:
 a smaller model with its own archive bytes. Until then the CPU build is as fast
 and keeps large shards. Plan, profile and raw measurements:
 `compress/hpd/GPU_PLAN.md` §9.
+
+## 11. Conclusion
+
+The profile in Part I said HP40 was slow because it waited on DRAM, large
+because it zeroed and never capped its tables, and weak where it had no model
+for the data. Fixing exactly those three things gave hpd: 5.6× faster than
+HP40 in 1/18 of its memory, and 1.55% smaller as well, because the bucketed
+tables, the record model and the x86 transform add ratio as well as speed.
+Against general-purpose compressors it writes the smallest archive on 40 of
+41 GP files and all 12 Silesia files, 21.3% and 19.4% smaller than xz -9e.
+
+Its cost is speed: about 80 KiB/s per thread in both directions, so it suits
+archives and backups rather than data read back often. Moving the model to a
+GPU does not change that. A byte-identical GPU build works, and a warp per shard
+brings an RTX 3090 level with a 64-thread CPU, but no further. The model's
+per-shard state (19 MB) caps how many shards the card can hold, and its branchy,
+serial integer code leaves most lanes idle. The remaining gains are on the
+CPU side: HP40's text experts, which hpd still lacks (0–1.8% on text), and
+faster model code. A GPU build that beats the CPU would need a much smaller
+model, which would write different archives.
