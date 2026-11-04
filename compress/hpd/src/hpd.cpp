@@ -64,6 +64,9 @@
 #if defined(__CUDACC__)
 #  pragma clang force_cuda_host_device end
 #endif
+#if defined(HPD_GPU)
+#  include "hp/warp_ops.hpp"
+#endif
 
 namespace {
 
@@ -71,7 +74,7 @@ namespace fs = std::filesystem;
 
 constexpr char kMagic[4] = {'H', 'P', 'D', '1'};
 constexpr int kVersion = 3;
-constexpr const char* kVersionText = "hpd 1.1.0 (writes archive format 3, reads 2 and 3)";
+constexpr const char* kVersionText = "hpd 1.2.0 (writes archive format 3, reads 2 and 3)";
 #ifndef HPD_SLOT_EXTRA
 #define HPD_SLOT_EXTRA 2
 #endif
@@ -811,7 +814,7 @@ void usage(std::FILE* o) {
         "  -M bits    largest automatic table size, 16..24 (default 22)\n"
         "  -g bits    how far one model's table may grow above -m, 0..8 (default 2)\n"
         "  -D slots   discovery slots, 1..12 (default 4)\n"
-        "  -G         code on the NVIDIA GPU, one shard per GPU thread (hpd-gpu build only;\n"
+        "  -G         code on the NVIDIA GPU, one shard per GPU warp (hpd-gpu build only;\n"
         "             default shards 1 MiB, tables -M 18; archives decode with plain hpd)\n"
         "  -h, -V     help, version\n",
         kVersionText);

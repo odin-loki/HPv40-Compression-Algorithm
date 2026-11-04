@@ -30,7 +30,10 @@
 
 namespace hp {
 
+struct WarpOps;
+
 class RecordModel {
+    friend struct WarpOps;
  public:
     static constexpr int kModels = 3 + (HPD_REC_2D ? 1 : 0);
     static constexpr int kOutputs = kModels * ContextModel::kOutputs;

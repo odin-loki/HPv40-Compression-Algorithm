@@ -35,8 +35,15 @@ __device__ inline std::uint32_t d_split(std::uint32_t x1, std::uint32_t x2, int 
            (((range & 0xffffu) * static_cast<std::uint32_t>(p)) >> 16);
 }
 
-__global__ void k_init(Job* jobs, int nj, int decode) {
-    const int t = blockIdx.x * blockDim.x + threadIdx.x;
+// Job index: one per thread, or one per warp (lane 0 builds the model).
+__device__ inline int job_index(int warp) {
+    const int g = blockIdx.x * blockDim.x + threadIdx.x;
+    return warp ? g >> 5 : g;
+}
+
+__global__ void k_init(Job* jobs, int nj, int decode, int warp) {
+    if (warp && (threadIdx.x & 31)) return;
+    const int t = job_index(warp);
     if (t >= nj) return;
     Job& j = jobs[t];
     hp::Config cfg;
@@ -89,6 +96,88 @@ __global__ void k_encode(Job* jobs, int nj, std::uint64_t bytes) {
         st = w > j.out_cap ? 2 : 1;
     }
     j.x1 = x1; j.x2 = x2; j.pos = k; j.io = w; j.status = st;
+}
+
+// P3: one warp per shard. Every lane runs the same coder arithmetic (so all
+// lanes know each bit); hp::WarpOps spreads the model over the lanes; lane 0
+// writes the output and the job state.
+__global__ void k_encode_w(Job* jobs, int nj, std::uint64_t bytes) {
+    const int t = job_index(1);
+    const int lane = threadIdx.x & 31;
+    if (t >= nj) return;
+    Job& j = jobs[t];
+    if (j.status) return;
+    hp::Predictor& p = *j.pred;
+    std::uint32_t x1 = j.x1, x2 = j.x2;
+    std::uint64_t k = j.pos, w = j.io;
+    const std::uint64_t end = j.n < k + bytes ? j.n : k + bytes;
+    int st = 0;
+#if defined(HPD_WARP_PROF)
+    if (lane < 16) hp::WarpOps::prof_acc()[lane] = 0;
+    __syncwarp();
+#endif
+    for (; k < end && !st; ++k) {
+        const int c = j.in[k];
+        for (int i = 7; i >= 0; --i) {
+            const int pr = hp::WarpOps::predict(p, lane);
+            const int bit = (c >> i) & 1;
+            const std::uint32_t xmid = d_split(x1, x2, hp::clamp_int(pr << 4, 1, 65535));
+            if (bit) x2 = xmid; else x1 = xmid + 1;
+            while (((x1 ^ x2) & 0xff000000u) == 0) {
+                if (lane == 0 && w < j.out_cap) j.out[w] = static_cast<std::uint8_t>(x2 >> 24);
+                ++w;
+                x1 <<= 8; x2 = (x2 << 8) | 255u;
+            }
+            hp::WarpOps::update(p, lane, bit);
+        }
+        if (w > j.out_cap) st = 2;
+        if ((k & 0xffff) == 0xffff && k >= (1u << 20) && w > k) st = 2;
+    }
+    if (!st && k == j.n) {
+        for (int i = 0; i < 4; ++i) {
+            if (lane == 0 && w < j.out_cap) j.out[w] = static_cast<std::uint8_t>(x1 >> 24);
+            ++w;
+            x1 <<= 8;
+        }
+        st = w > j.out_cap ? 2 : 1;
+    }
+    __syncwarp();
+#if defined(HPD_WARP_PROF)
+    if (lane < 16) atomicAdd(&hp::hp_prof[lane], hp::WarpOps::prof_acc()[lane]);
+#endif
+    if (lane == 0) { j.x1 = x1; j.x2 = x2; j.pos = k; j.io = w; j.status = st; }
+}
+
+__global__ void k_decode_w(Job* jobs, int nj, std::uint64_t bytes) {
+    const int t = job_index(1);
+    const int lane = threadIdx.x & 31;
+    if (t >= nj) return;
+    Job& j = jobs[t];
+    if (j.status) return;
+    hp::Predictor& p = *j.pred;
+    std::uint32_t x1 = j.x1, x2 = j.x2, x = j.x;
+    std::uint64_t k = j.pos, r = j.io;
+    const std::uint64_t end = j.n < k + bytes ? j.n : k + bytes;
+    for (; k < end; ++k) {
+        int byte = 0;
+        for (int i = 0; i < 8; ++i) {
+            const std::uint32_t xmid = d_split(x1, x2, hp::clamp_int(hp::WarpOps::predict(p, lane) << 4, 1, 65535));
+            const int bit = x <= xmid ? 1 : 0;
+            if (bit) x2 = xmid; else x1 = xmid + 1;
+            while (((x1 ^ x2) & 0xff000000u) == 0) {
+                x1 <<= 8; x2 = (x2 << 8) | 255u;
+                x = (x << 8) | (r < j.in_len ? j.in[r++] : 0u);
+            }
+            hp::WarpOps::update(p, lane, bit);
+            byte = (byte << 1) | bit;
+        }
+        if (lane == 0) j.out[k] = static_cast<std::uint8_t>(byte);
+    }
+    __syncwarp();
+    if (lane == 0) {
+        j.x1 = x1; j.x2 = x2; j.x = x; j.pos = k; j.io = r;
+        if (k == j.n) j.status = 1;
+    }
 }
 
 __global__ void k_decode(Job* jobs, int nj, std::uint64_t bytes) {
@@ -207,6 +296,8 @@ std::uint64_t arena_bytes(int table_bits, int slot_extra, int disc_slots) {
     std::uint64_t* d_used = nullptr;
     hp::DevArena* d_arena = nullptr;
     std::uint64_t used = 0;
+    const int shift0 = 0;
+    if (!check(cudaMemcpyToSymbol(hp::hp_arena_shift, &shift0, sizeof shift0), "probe")) return 0;
     bool ok = check(cudaMalloc(&a.base, cap), "probe arena") &&
               check(cudaMemset(a.base, 0, cap), "probe arena") && (a.cap = cap, true) &&
               check(cudaMalloc(&d_arena, sizeof a), "probe") &&
@@ -291,16 +382,22 @@ bool run(std::vector<Task>& tasks, bool decode) {
                  check(cudaMemcpy(d_arenas, arenas.data(), sizeof(hp::DevArena) * wave, cudaMemcpyHostToDevice), "upload") &&
                  check(cudaMemcpyToSymbol(hp::hp_arenas, &d_arenas, sizeof d_arenas), "upload");
         }
-        // Threads per block. Shards diverge (different data, different branches), so
-        // small blocks spread them over every SM instead of stalling one warp.
+        // Warp per shard (P3, default) or thread per shard (P2: HPD_GPU_WARP=0).
+        // P2 threads per block: shards diverge, so small blocks spread them over
+        // every SM (measured: 1 > 2 > 4 > 8 > 16 > 32).
+        static const bool warp = !(std::getenv("HPD_GPU_WARP") && std::atoi(std::getenv("HPD_GPU_WARP")) == 0);
         static const int tpb_env = std::getenv("HPD_GPU_TPB") ? std::atoi(std::getenv("HPD_GPU_TPB")) : 0;
-        const int tpb = tpb_env > 0 ? tpb_env : 1;   // measured: 1 > 2 > 4 > 8 > 16 > 32
-        const int blocks = static_cast<int>((wave + tpb - 1) / tpb);
+        const int tpb = warp ? 32 : (tpb_env > 0 ? tpb_env : 1);
+        const int blocks = warp ? static_cast<int>(wave) : static_cast<int>((wave + tpb - 1) / tpb);
+        {
+            const int shift = warp ? 5 : 0;
+            ok = ok && check(cudaMemcpyToSymbol(hp::hp_arena_shift, &shift, sizeof shift), "upload");
+        }
         if (trace()) std::fprintf(stderr, "[gpu] wave %zu shards, arena %llu B each, %s\n", wave,
                                   static_cast<unsigned long long>(arena), decode ? "decode" : "encode");
         if (ok) {
             const auto t0 = std::chrono::steady_clock::now();
-            k_init<<<blocks, tpb>>>(d_jobs, static_cast<int>(wave), decode ? 1 : 0);
+            k_init<<<blocks, tpb>>>(d_jobs, static_cast<int>(wave), decode ? 1 : 0, warp ? 1 : 0);
             ok = check(cudaGetLastError(), "launch") && check(cudaDeviceSynchronize(), "GPU model set-up");
             if (trace()) std::fprintf(stderr, "[gpu] init %.0f ms\n", ms_since(t0));
         }
@@ -310,8 +407,13 @@ bool run(std::vector<Task>& tasks, bool decode) {
         std::vector<int> status(wave);
         for (std::uint64_t coded = 0; ok;) {
             const auto t0 = std::chrono::steady_clock::now();
-            if (decode) k_decode<<<blocks, tpb>>>(d_jobs, static_cast<int>(wave), step);
-            else k_encode<<<blocks, tpb>>>(d_jobs, static_cast<int>(wave), step);
+            if (warp) {
+                if (decode) k_decode_w<<<blocks, tpb>>>(d_jobs, static_cast<int>(wave), step);
+                else k_encode_w<<<blocks, tpb>>>(d_jobs, static_cast<int>(wave), step);
+            } else {
+                if (decode) k_decode<<<blocks, tpb>>>(d_jobs, static_cast<int>(wave), step);
+                else k_encode<<<blocks, tpb>>>(d_jobs, static_cast<int>(wave), step);
+            }
             ok = check(cudaGetLastError(), "launch") && check(cudaDeviceSynchronize(), "GPU model loop");
             if (!ok) break;
             const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -334,6 +436,18 @@ bool run(std::vector<Task>& tasks, bool decode) {
             next = std::max<std::uint64_t>(16, std::min<std::uint64_t>(next, step * 4));
             step = next;
         }
+#if defined(HPD_WARP_PROF)
+        if (ok) {
+            unsigned long long pr[16] = {};
+            cudaMemcpyFromSymbol(pr, hp::hp_prof, sizeof pr);
+            unsigned long long tot = 0;
+            for (int i = 0; i < 10; ++i) tot += pr[i];
+            const char* names[10] = {"lookups+match", "PY", "gates", "dots", "L2+hedge+APM",
+                                     "upd serial", "upd mixer", "upd models", "nibble", "end_of_byte"};
+            for (int i = 0; i < 10; ++i)
+                std::fprintf(stderr, "[prof] %-14s %5.1f%%\n", names[i], tot ? 100.0 * pr[i] / tot : 0.0);
+        }
+#endif
         if (ok) {
             arenas.assign(wave, hp::DevArena{});
             ok = check(cudaMemcpy(arenas.data(), d_arenas, sizeof(hp::DevArena) * wave, cudaMemcpyDeviceToHost), "download");

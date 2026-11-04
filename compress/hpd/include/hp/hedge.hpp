@@ -70,7 +70,10 @@ inline std::uint32_t pow2_neg(int k) {
     return pow2_neg16()[k & 15] >> shift;
 }
 
+struct WarpOps;
+
 class Hedge {
+    friend struct WarpOps;
  public:
     explicit Hedge(int n)
         : n_(n), w_(static_cast<std::size_t>(n), (1u << 16) / (n ? n : 1)),

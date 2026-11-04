@@ -1,6 +1,6 @@
 # Part II — hpd: turning HP40 into a day-to-day compressor
 
-**Author:** Odin Loch (with Claude Code) · **Date:** 2026-11-04 · **Code:** [`compress/hpd/`](../../compress/hpd/) · **Source package:** [`dist/hpd-1.1.0-src.zip`](../../dist/hpd-1.1.0-src.zip) (§9)
+**Author:** Odin Loch (with Claude Code) · **Date:** 2026-11-04 · **Code:** [`compress/hpd/`](../../compress/hpd/) · **Source package:** [`dist/hpd-1.2.0-src.zip`](../../dist/hpd-1.2.0-src.zip) (§9)
 **Follows:** [`HP40_paper.md`](HP40_paper.md) (Part I: profiling and data-mining HP40 / HP40-Lite)
 
 Part I found that HP40 compresses general data 20% better than xz -9e but is
@@ -238,16 +238,16 @@ among CM compressors is not measured here.
 ## 9. Source code
 
 The complete hpd source is packaged as
-[`dist/hpd-1.1.0-src.zip`](../../dist/hpd-1.1.0-src.zip)
-(339,403 bytes, 40 files, SHA-256
-`33da85f7c93efa592d39d9b551edd3c8843f99bb46f8ae0b34d69c8b50b905a3`).
+[`dist/hpd-1.2.0-src.zip`](../../dist/hpd-1.2.0-src.zip)
+(366,030 bytes, 41 files, SHA-256
+`7e11febcd342c077769d92dfb95be9c6981378925b67c03cc68dc4c654279d01`).
 It holds `src/`, `include/hp/`, the Makefile, the README with the archive
 format, the round-trip, fuzz and GPU-vs-CPU tests, the GPU build
 (`src/hpd_gpu.cuh`, `make gpu`, §10) with its plan and measurements
 (`GPU_PLAN.md`), the benchmark runners and the AGPL-3.0 licence. To build and test:
 
 ```bash
-unzip hpd-1.1.0-src.zip && cd hpd-1.1.0
+unzip hpd-1.2.0-src.zip && cd hpd-1.2.0
 make && make test            # needs a C++20 compiler (GCC 13 tested)
 build/hpd c FILE && build/hpd t FILE.hpd
 ```
@@ -265,8 +265,8 @@ stream, a streaming end marker, pass-through of incompressible 64 KiB chunks,
 passed-through chunks its archives are exactly 7 bytes larger for a
 single-block file (5 bytes per block, 2 per archive), checked on this paper's
 text, the hpd binary and a PNG figure. hpd 1.0.0 still decodes format-2
-archives. hpd 1.1.0 adds the GPU build (§10); its CPU build writes the same
-bytes as 1.0.0. Its decoder passed 2,000 mutated archives from `test/fuzz.sh`
+archives. hpd 1.1.0 adds the GPU build (§10) and 1.2.0 its warp-per-shard
+kernels; their CPU build writes the same bytes as 1.0.0. Its decoder passed 2,000 mutated archives from `test/fuzz.sh`
 with no crash and no wrong output.
 
 ## 10. On the GPU
@@ -294,21 +294,29 @@ starts learning from nothing:
 
 xz -9e on the same 64 MiB: 13,349,436 bytes (1.591 bits/byte).
 
-**Speed.** 4,096 shards of 16 KiB, table bits 16:
+**Speed.** Two GPU layouts, 64 MiB test bed, table bits 16:
 
-| | GPU, RTX 3090 | CPU, 64 threads |
-|---|---:|---:|
-| compress | 575 KiB/s | 1,161 KiB/s |
-| decompress | 573 KiB/s | 1,094 KiB/s |
+| | thread per shard | warp per shard (default) | CPU, 64 threads |
+|---|---:|---:|---:|
+| 16 KiB shards, compress | 575 KiB/s | 940 KiB/s | 1,069 KiB/s |
+| 16 KiB shards, decompress | 573 KiB/s | 899 KiB/s | 1,068 KiB/s |
+| 64 KiB shards, compress | — | 1,091 KiB/s | 1,153 KiB/s |
+| 64 KiB shards, decompress | — | 1,078 KiB/s | 1,194 KiB/s |
 
-The GPU is about **2× slower** than the CPU. Even the smallest model needs
-19.3 MB per shard, so the card holds only 1,134 shards (about 14 threads per
-SM), too few to hide memory latency. Each thread runs the whole model serially
-at about 2 KiB/s, and shards in the same warp diverge: warps of one thread were
-fastest (0.6 MiB/s against 0.3 MiB/s for 32). Shards small enough to fill the card
-also cost 27–45% in ratio and fall behind xz -9e.
+With one thread per shard the GPU is about **2× slower** than the CPU: even the
+smallest model needs 19.3 MB per shard, so the card holds only 1,134 shards,
+and one GPU thread runs the whole model at about 2 KiB/s. With **one warp per
+shard** the 32 lanes share each bit's work: every context model and match model
+on its own lane, the mixer's dot products and updates split over all lanes with
+exact integer reductions, lane 0 for the short serial parts. One shard then runs
+at 5.7 KiB/s, and the card reaches **0.84–0.95× the CPU**, with identical bytes.
+It does not pass the CPU because it is issue-bound with mostly idle lanes
+(different lanes run different model code, and lane 0's serial parts take about
+30% of the time), not bandwidth-bound (memory controller 34% busy). Shards small
+enough to fill the card also cost 27–45% in ratio and fall behind xz -9e.
 
-**Next.** The route to a GPU win is a warp per shard (32 lanes share one shard's
-model lookups, mixer and updates) with a smaller, coalesced per-shard state, so
-that fewer, larger shards keep the card busy. Until then the CPU build is the
-faster one. Plan and raw measurements: `compress/hpd/GPU_PLAN.md`.
+**Next.** A GPU win would need 32 shards per warp in lock-step with tens of
+thousands of shards resident, so per-shard state near 0.7 MB instead of 19 MB:
+a smaller model with its own archive bytes. Until then the CPU build is as fast
+and keeps large shards. Plan, profile and raw measurements:
+`compress/hpd/GPU_PLAN.md` §9.

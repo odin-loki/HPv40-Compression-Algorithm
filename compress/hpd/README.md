@@ -49,7 +49,7 @@ A file name of `-` means stdin / stdout, so `tar cf - dir | hpd c - - > dir.tar.
 | `-M bits` | 22 | largest automatic table size (16–24) |
 | `-g bits` | 2 | how far one model's table may grow above the base (0–8) |
 | `-D slots` | 4 | discovery slots (1–12) |
-| `-G` | off | hpd-gpu only: run the model on the NVIDIA GPU, one shard per GPU thread (default 1 MiB shards, `-M 18`). Archives are byte-identical to the CPU build with the same `-B`/`-M` and decode with either. Currently about 2× slower than a 64-thread CPU; see [`GPU_PLAN.md`](GPU_PLAN.md) §9. |
+| `-G` | off | hpd-gpu only: run the model on the NVIDIA GPU, one shard per GPU thread (default 1 MiB shards, `-M 18`). Archives are byte-identical to the CPU build with the same `-B`/`-M` and decode with either. One warp per shard (`HPD_GPU_WARP=0`: one thread); 0.84–0.95× a 64-thread CPU on an RTX 3090, see [`GPU_PLAN.md`](GPU_PLAN.md) §9. |
 | `-h`, `-V` | | help, version |
 
 Files are streamed in batches of one block per thread, so memory is bounded
@@ -114,7 +114,8 @@ on one machine decodes on any other.
 | `include/hp/zero_array.hpp` | demand-zero arrays, shared history (new) |
 | `include/hp/hd.hpp` | `vec` / `shared`: std containers on the CPU, host/device versions in the GPU build |
 | `src/hpd_gpu.cuh` | hpd-gpu: kernels, per-shard GPU arenas, short launches (`-DHPD_GPU`) |
-| `GPU_PLAN.md` | GPU plan and measured results (P0–P2) |
+| `include/hp/warp_ops.hpp` | hpd-gpu: Predictor predict / update spread over the 32 lanes of a warp |
+| `GPU_PLAN.md` | GPU plan and measured results (P0–P3) |
 | `src/hp_main.cpp` | the original single-stream `hp` CLI on this tree (`make build/hp_lite`) |
 | `test/roundtrip.sh` | round-trip tests |
 | `test/fuzz.sh` | mutation fuzzer for `hpd d` (archive formats 2 and 3) |

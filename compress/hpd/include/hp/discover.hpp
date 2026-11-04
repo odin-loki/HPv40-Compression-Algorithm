@@ -61,7 +61,10 @@ class Rng {
     std::uint64_t s_;
 };
 
+struct WarpOps;
+
 class DiscoveryPool {
+    friend struct WarpOps;
  public:
     static constexpr int kSlots = 12;            // maximum; n_ slots are live (hpd: runtime, default 4)
     static constexpr int kEvalBytes = HP_DISC_EVAL;   // review cadence

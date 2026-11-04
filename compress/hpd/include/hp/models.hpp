@@ -108,6 +108,13 @@ class ContextModel {
     void prefetch_nibble(int c0) { cur_ = nullptr; nib_ = 1; locate(16 | (c0 & 15)); }
 
     void predict(int c0, int backoff_p12, int* out) {
+        predict_ind(c0);
+        predict_py(backoff_p12, out);
+    }
+    // predict() in two halves (hpd-gpu runs them on separate warp lanes): the
+    // table lookup and indirect estimate, then the PY estimate, which needs the
+    // parent order's indirect estimate as backoff.
+    void predict_ind(int c0) {
         if (c0 >= 16 && !nib_) prefetch_nibble(c0);
         if (!cur_) select();
         int node;
@@ -120,6 +127,8 @@ class ContextModel {
         slot_ = &cur_->s[node - 1];
         state_ = *slot_;
         p_ind_ = sm_.predict(state_);
+    }
+    void predict_py(int backoff_p12, int* out) {
         const StateTable& st = state_table();
         {
             int a0 = st.n0(state_), a1 = st.n1(state_);
@@ -226,9 +235,15 @@ class ContextModel {
     // Writes kOutputs stretched values into out[]. backoff is the parent
     // order's probability, used by the PY estimate.
     void predict(int c0, int backoff_p12, int* out) {
+        predict_ind(c0);
+        predict_py(backoff_p12, out);
+    }
+    void predict_ind(int c0) {
         idx_ = (h_ ^ (static_cast<std::uint32_t>(c0) * 0x9E3779B1u)) & mask_;
         state_ = t_[idx_];
         p_ind_ = sm_.predict(state_);
+    }
+    void predict_py(int backoff_p12, int* out) {
         const StateTable& st = state_table();
         {
             int a0 = st.n0(state_), a1 = st.n1(state_);

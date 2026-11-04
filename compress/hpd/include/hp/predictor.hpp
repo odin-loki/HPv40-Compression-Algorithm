@@ -83,7 +83,10 @@ struct Config {
     }
 };
 
+struct WarpOps;
+
 class Predictor {
+    friend struct WarpOps;   // hpd-gpu: warp-parallel predict / update
  public:
     static constexpr int kExtraCtx =
         (HP_WORD_STREAMS ? 1 : 0) +

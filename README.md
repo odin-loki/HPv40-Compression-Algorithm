@@ -15,12 +15,12 @@ everyday context-mixing compressor built from what that study found.
 | path | what |
 |---|---|
 | [`compress/hpd/`](compress/hpd/) | hpd: source, build, tests, archive format ([README](compress/hpd/README.md)) |
-| [`dist/`](dist/) | `hpd-1.1.0-src.zip`, the hpd source package referenced by the paper |
+| [`dist/`](dist/) | `hpd-1.2.0-src.zip`, the hpd source package referenced by the paper |
 | [`paper/hp40/`](paper/hp40/) | the paper: Part I [`HP40_paper.md`](paper/hp40/HP40_paper.md) (HP40 / HP40-Lite profiling and expert mining), Part II [`HPD_part2.md`](paper/hp40/HPD_part2.md) (hpd), plus all data, figures and scripts ([README](paper/hp40/README.md)) |
 
 ## Quick start
 
-Source package: [`dist/hpd-1.1.0-src.zip`](dist/hpd-1.1.0-src.zip) (rebuild with `python3 compress/hpd/tools/make_src_zip.py`).
+Source package: [`dist/hpd-1.2.0-src.zip`](dist/hpd-1.2.0-src.zip) (rebuild with `python3 compress/hpd/tools/make_src_zip.py`).
 
 ```bash
 cd compress/hpd
@@ -31,8 +31,8 @@ build/hpd t file.hpd        # verify CRCs without writing
 ```
 
 GPU build: `make gpu` builds `build/hpd-gpu` (`hpd c -G`), which runs the
-model on an NVIDIA GPU and writes the same archive bytes as the CPU build. It is
-currently about 2× slower than a 64-thread CPU (Part II §10).
+model on an NVIDIA GPU and writes the same archive bytes as the CPU build. With one
+warp per shard it runs at 0.84–0.95× the speed of a 64-thread CPU (Part II §10).
 
 HP40 itself comes from the `hp` lab,
 [odin-loki/CompressionAlgorithm](https://github.com/odin-loki/CompressionAlgorithm).

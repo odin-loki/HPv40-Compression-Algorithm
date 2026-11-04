@@ -58,7 +58,10 @@ inline std::int64_t dot64(const std::int32_t* w, const std::int32_t* x, int n) {
     return sum;
 }
 
+struct WarpOps;   // hpd-gpu: the warp-parallel predict / update (hp/warp_ops.hpp)
+
 class MixerNet {
+    friend struct WarpOps;
  public:
     // n_inputs: experts. ctx_sizes: one entry per layer-1 mixer, giving how
     // many weight sets that mixer keeps. ctx2_size: layer-2 weight sets.

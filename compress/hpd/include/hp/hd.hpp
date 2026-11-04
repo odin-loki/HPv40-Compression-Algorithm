@@ -38,9 +38,10 @@ struct DevArena {
     int overflow;
 };
 __device__ DevArena* hp_arenas;
+__device__ int hp_arena_shift;   // 0: one arena per thread; 5: one per warp (warp-per-shard)
 
 __device__ inline DevArena& hp_my_arena() {
-    return hp_arenas[blockIdx.x * blockDim.x + threadIdx.x];
+    return hp_arenas[(blockIdx.x * blockDim.x + threadIdx.x) >> hp_arena_shift];
 }
 
 // 64-byte aligned bump allocation from this thread's arena. The arena is zeroed

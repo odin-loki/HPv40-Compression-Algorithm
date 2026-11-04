@@ -1,12 +1,12 @@
 # hpd on the GPU: sharded context mixing — plan
 
-**Status (2026-11-04):** P0, P1 and P2 are done and measured on an RTX 3090
-(24 GB, CUDA 12.4, clang 23.1) in WSL2 on OdinsPC. The GPU build (`make gpu`,
-`hpd -G`) writes archives **byte-identical** to the CPU build and each decodes the
-other's, but one-thread-per-shard is **2× slower than the 64-thread CPU** and
-needs shards so small that ratio falls behind xz -9e. Results: §9. P3 (warp per
-shard) is the remaining route to a speed-up.
-**Code today:** `compress/hpd/` (hpd 1.1.0, archive format 3: the CPU build, plus the GPU build `make gpu` / `hpd -G` from P1–P2; the model is unchanged from the format-2 build measured in Part II).
+**Status (2026-11-05):** P0–P3 are done and measured on an RTX 3090 (24 GB,
+CUDA 12.4, clang 23.1) in WSL2 on OdinsPC. The GPU build (`make gpu`, `hpd -G`)
+writes archives **byte-identical** to the CPU build and each decodes the other's.
+P2 (thread per shard) ran at half the 64-thread CPU's speed; P3 (warp per shard,
+the default) brings the GPU to **0.84–0.95× the CPU**: parity, not a win. Shards
+small enough to fill the card cost 27–45% in ratio. Results: §9.
+**Code today:** `compress/hpd/` (hpd 1.2.0, archive format 3: the CPU build, plus the GPU build `make gpu` / `hpd -G` from P1–P2; the model is unchanged from the format-2 build measured in Part II).
 **Background:** `paper/hp40/HP40_paper.md` (Part I), `paper/hp40/HPD_part2.md` (Part II).
 
 ## 1. Why sharding is the only way onto a GPU
@@ -201,14 +201,57 @@ does not reset the GPU. 64 MiB test bed, 16 KiB shards, `-M 18`
   shard, one GPU thread at ~2 KiB/s: about 9 hours. Large shards only help when
   the input is many GB.
 
-### What would make the GPU win (P3, P4)
+### P3: one warp per shard (`include/hp/warp_ops.hpp`, default)
 
-1. **Warp per shard** (§4): 32 lanes share one shard's ~20 model lookups,
-   mixer dot products and updates. That turns 32 diverging threads into one
-   coherent warp and lets 32× fewer shards (bigger, better ratio) fill the card.
-2. **Smaller per-shard state** (§3, P4): the 4.3 MB APM, int16 mixer weights,
-   tables sized to the shard. At 2 MB per shard the card holds ~10,000.
-3. **Coalesced layout**: structure-of-arrays so lanes read neighbouring words.
+`hp::WarpOps` runs `Predictor::predict` / `update` with the 32 lanes of a warp:
+every context model's lookup and indirect estimate on its own lane (13 main,
+3 record, 4 discovery; `ContextModel::predict` is split into `predict_ind` and
+`predict_py` so the Pitman–Yor backoff chain is one short dependent step), the
+11 match models on 11 more lanes, the 11 layer-1 mixer dot products over all
+lanes (exact int64 warp reductions), the hedge update one expert per lane, and
+every model / mixer / APM update in parallel. Lane 0 keeps the short serial
+parts (mixer gates, layer 2, APM refine, end-of-byte bookkeeping). All lanes
+run the same arithmetic coder; lane 0 writes the output. Same bytes as the CPU.
+`HPD_GPU_WARP=0` selects P2.
 
-To beat the CPU P3 must be at least 2× faster than P2 at the same shard size,
-and to beat xz -9e on ratio as well, shards must stay ≥ 256 KiB.
+64 MiB test bed, RTX 3090 vs 64-thread Xeon Gold 6242, archives identical:
+
+| | P2 GPU | **P3 GPU** | CPU, 64 threads |
+|---|---:|---:|---:|
+| 16 KiB shards, compress | 575 KiB/s | **940 KiB/s** | 1,069 KiB/s |
+| 16 KiB shards, decompress | 573 KiB/s | **899 KiB/s** | 1,068 KiB/s |
+| 64 KiB shards, compress | — | **1,091 KiB/s** | 1,153 KiB/s |
+| 64 KiB shards, decompress | — | **1,078 KiB/s** | 1,194 KiB/s |
+
+The machine was shared (load 8–55 during these runs; heavier load slows the
+CPU more than the GPU, and with load 26–53 the GPU was ahead at 16 KiB shards,
+890 against 549 KiB/s).
+
+* One shard alone: 5.7 KiB/s (P2 thread: 2 KiB/s). With 1,024 shards each gets
+  1 KiB/s: about 1.0 MiB/s for the card.
+* Phase profile (clock64 per phase, 1,024 shards, `-DHPD_WARP_PROF`): mixer dots
+  16%, mixer update 17%, model updates 17%, lookups and match 13%, PY 6%, lane-0
+  serial parts (gates, layer 2 + hedge + APM, gria, end of byte) about 30%.
+* Not bandwidth-bound: DRAM controller 34% busy, SMs 100% busy. The warp
+  issues instructions for few useful lanes: lanes run different models (CM,
+  match, hashing) and lane 0 runs serial code while 31 lanes wait.
+* Tried and kept: hedge update over lanes (no measurable change). Tried and
+  dropped: reading all 11 mixer rows in one pass (`HPD_WARP_UNROLL=1`):
+  0.9 against 1.0 MiB/s, slower.
+* Nsight Compute stall counters need "allow access to GPU performance counters"
+  in the Windows NVIDIA settings (ERR_NVGPUCTRPERM); not available here.
+
+### What is left
+
+The card is issue-bound with mostly idle lanes, and memory (19.3 MB per shard)
+caps it at ~1,134 shards. What could still win, all large changes:
+
+1. **32 shards per warp in lock-step** (P2 layout) with ~30,000 shards resident,
+   which needs per-shard state near 0.7 MB: a smaller model (the 4.3 MB APM,
+   the match tables, int16 mixer weights). That changes the archive bytes, so it
+   would be a new model setting, not hpd 1.x.
+2. **Fewer 64-bit operations**: hashing (mix64), 64-bit products and divisions
+   cost several GPU instructions each.
+3. **Parallel end-of-byte**: the 11 match `push_byte` calls and context hashing.
+
+Until then the CPU build is as fast and keeps large shards (better ratio).
