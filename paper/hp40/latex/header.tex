@@ -1,0 +1,89 @@
+% header.tex -- LaTeX preamble additions for the hpd paper (pandoc -H, xetex/tectonic).
+% Fonts are loaded by file name: tectonic resolves bundle fonts by file, not by family name.
+
+% ---- fonts ---------------------------------------------------------------
+\setmainfont{texgyretermes}[
+  Extension=.otf, UprightFont=*-regular, BoldFont=*-bold,
+  ItalicFont=*-italic, BoldItalicFont=*-bolditalic]
+\setsansfont{texgyreheros}[
+  Extension=.otf, UprightFont=*-regular, BoldFont=*-bold,
+  ItalicFont=*-italic, BoldItalicFont=*-bolditalic, Scale=MatchLowercase]
+\setmonofont{DejaVuSansMono}[
+  Extension=.ttf, UprightFont=*, BoldFont=*-Bold,
+  ItalicFont=*-Oblique, BoldItalicFont=*-BoldOblique, Scale=MatchLowercase]
+\setmathfont{texgyretermes-math.otf}
+
+% Glyphs missing from TeX Gyre Termes: use the current font if it has the glyph
+% (DejaVu Sans Mono in code blocks keeps diagrams aligned), else DejaVu Sans.
+\usepackage{newunicodechar}
+\newfontfamily\hpdfallbackfont{DejaVuSans}[Extension=.ttf, Scale=MatchLowercase]
+\newcommand\hpdglyph[1]{\iffontchar\font#1\relax\char#1\relax\else{\hpdfallbackfont\char#1\relax}\fi}
+\newcommand\hpdsup[2]{\iffontchar\font#1\relax\char#1\relax\else\textsuperscript{#2}\fi}
+\newunicodechar{⁰}{\hpdsup{"2070}{0}}
+\newunicodechar{⁴}{\hpdsup{"2074}{4}}
+\newunicodechar{⁵}{\hpdsup{"2075}{5}}
+\newunicodechar{⁶}{\hpdsup{"2076}{6}}
+\newunicodechar{⁷}{\hpdsup{"2077}{7}}
+\newunicodechar{⁸}{\hpdsup{"2078}{8}}
+\newunicodechar{⁹}{\hpdsup{"2079}{9}}
+\newunicodechar{⁺}{\hpdsup{"207A}{+}}
+\newunicodechar{⁻}{\hpdsup{"207B}{\char"2212\relax}}
+\newunicodechar{─}{\hpdglyph{"2500}}
+\newunicodechar{│}{\hpdglyph{"2502}}
+\newunicodechar{┌}{\hpdglyph{"250C}}
+\newunicodechar{┐}{\hpdglyph{"2510}}
+\newunicodechar{└}{\hpdglyph{"2514}}
+\newunicodechar{┘}{\hpdglyph{"2518}}
+\newunicodechar{├}{\hpdglyph{"251C}}
+\newunicodechar{┤}{\hpdglyph{"2524}}
+\newunicodechar{┬}{\hpdglyph{"252C}}
+\newunicodechar{┴}{\hpdglyph{"2534}}
+\newunicodechar{┼}{\hpdglyph{"253C}}
+\newunicodechar{►}{\hpdglyph{"25BA}}
+\newunicodechar{▼}{\hpdglyph{"25BC}}
+\newunicodechar{▲}{\hpdglyph{"25B2}}
+\newunicodechar{◄}{\hpdglyph{"25C4}}
+\newunicodechar{■}{\hpdglyph{"25A0}}
+\newunicodechar{●}{\hpdglyph{"25CF}}
+\newunicodechar{✓}{\hpdglyph{"2713}}
+\newunicodechar{✗}{\hpdglyph{"2717}}
+
+% ---- captions, floats, tables -------------------------------------------
+\usepackage{caption}
+\captionsetup{font=small, labelfont=bf, labelsep=period, skip=6pt}
+\captionsetup[table]{position=above}
+\setlength{\LTcapwidth}{\textwidth}
+\renewcommand{\arraystretch}{1.08}
+% Wide tables: tables.lua wraps them in \begingroup<size>\setlength{\tabcolsep}{..}...\endgroup
+% and sets column widths, so longtables still break across pages.
+\setlength{\LTpre}{6pt}
+\setlength{\LTpost}{6pt}
+
+% Figures: never wider than the text, never taller than 60% of the page.
+\makeatletter
+\@ifundefined{pandocbounded}{}{%
+\renewcommand*\pandocbounded[1]{%
+  \sbox\pandoc@box{#1}%
+  \Gscale@div\@tempa{0.6\textheight}{\dimexpr\ht\pandoc@box+\dp\pandoc@box\relax}%
+  \Gscale@div\@tempb{\linewidth}{\wd\pandoc@box}%
+  \ifdim\@tempb\p@<\@tempa\p@\let\@tempa\@tempb\fi
+  \ifdim\@tempa\p@<\p@\scalebox{\@tempa}{\usebox\pandoc@box}%
+  \else\usebox{\pandoc@box}%
+  \fi}}
+\makeatother
+\setcounter{topnumber}{3}
+\setcounter{totalnumber}{4}
+\renewcommand{\topfraction}{0.85}
+\renewcommand{\textfraction}{0.1}
+\renewcommand{\floatpagefraction}{0.75}
+
+% ---- code ------------------------------------------------------------------
+\makeatletter
+\g@addto@macro\@verbatim{\small}
+\AtBeginDocument{\@ifpackageloaded{fancyvrb}{\fvset{fontsize=\small}}{}}
+\makeatother
+
+% ---- misc ------------------------------------------------------------------
+\clubpenalty=10000
+\widowpenalty=10000
+\tracinglostchars=2

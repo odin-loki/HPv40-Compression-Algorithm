@@ -13,6 +13,13 @@ def hp(binname, mem):
 def pipe(c, d):
     return (["sh", "-c", c + " < {i} > {o}"], ["sh", "-c", d + " < {i} > {o}"])
 
+def zpaq(method):
+    # zpaq is an archiver: the archive holds the file under its base name; its whole size is the output
+    return (["sh", "-c", 'cd "$(dirname {i})" && rm -f {o}.zpaq && zpaq a {o}.zpaq "$(basename {i})" ' + method
+             + ' -t1 > /dev/null && mv {o}.zpaq {o}'],
+            ["sh", "-c", 'rm -rf {o}.d && ln -sf {i} {o}.zpaq && zpaq x {o}.zpaq -to {o}.d -t1 > /dev/null'
+             ' && mv {o}.d/* {o} && rm -rf {o}.d {o}.zpaq'])
+
 CODECS = {
     "hp40":      hp("hp_v40", 22),
     "hp40lite":  hp("hp_v40lite", 22),
@@ -23,6 +30,10 @@ CODECS = {
     "zstd22u":   pipe("zstd --ultra -22 --long=27 -q -c --single-thread", "zstd -d --long=27 -q -c"),
     "brotli11":  pipe("brotli -q 11 -w 24 -c", "brotli -d -c"),
     "lz4hc":     pipe("lz4 -12 -q -c", "lz4 -d -q -c"),
+    # other context-mixing compressors, binaries on PATH: paq8px v217, zpaq 7.15, lpaq1
+    "paq8px8":   (["paq8px", "-8", "{i}", "{o}"], ["paq8px", "-d", "{i}", "{o}"]),
+    "zpaq5":     zpaq("-m5"),
+    "lpaq1_9":   (["lpaq1", "9", "{i}", "{o}"], ["lpaq1", "d", "{i}", "{o}"]),
 }
 for m in (16, 18, 20, 22, 24):
     CODECS[f"hp40_m{m}"] = hp("hp_v40", m)
