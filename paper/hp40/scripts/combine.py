@@ -84,7 +84,7 @@ def toc(text):
 
 front = f"""---
 title: "HP40 and hpd: Profiling, Data-Mining and Rebuilding an Integer-Exact Context Mixer for General-Purpose Compression"
-author: "Odin Loch (with Claude Code)"
+author: "Odin Loch"
 date: "{DATE} · hpd {VERSION}"
 ---
 

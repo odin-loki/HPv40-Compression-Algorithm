@@ -3,4 +3,3 @@ __pycache__/
 build/
 *.hpd
 fuzz_out.*/
-zenodo/upload/

@@ -1,6 +1,6 @@
 # Uploading to Zenodo
 
-Everything to upload is in **`zenodo/upload/`** (rebuild it any time with
+Everything to upload is in **`zenodo/upload/`** (committed to the repository; rebuild it with
 `python zenodo/make_package.py`):
 
 | file | size | what |
@@ -11,8 +11,8 @@ Everything to upload is in **`zenodo/upload/`** (rebuild it any time with
 | `SHA256SUMS.txt` | | SHA-256 of the three files |
 
 ```
-fe8a60d648b27acdcc04a1562e9c954045da929791adff45dbffef6c1f4f16ab  HP40-hpd-paper-materials-1.2.0.zip
-e24e75060df30be5dedc4fd9855654362099fc77afa658e65d8af97ad1d257f7  HP40_hpd_paper.pdf
+c58eefd187b897671dfe27d68fb1abe5d8a0cbad04dc5190f4c784ee3fec93ac  HP40-hpd-paper-materials-1.2.0.zip
+c135b47baf2d63891da982d270018b589fec9aff88240e92908d2ffc44425194  HP40_hpd_paper.pdf
 7e11febcd342c077769d92dfb95be9c6981378925b67c03cc68dc4c654279d01  hpd-1.2.0-src.zip
 ```
 
@@ -24,11 +24,8 @@ e24e75060df30be5dedc4fd9855654362099fc77afa658e65d8af97ad1d257f7  HP40_hpd_paper
 2. Click **New upload** (top right).
 3. **Files:** drag in the four files from `zenodo/upload/`. Set
    `HP40_hpd_paper.pdf` as the default preview if Zenodo asks.
-4. **DOI:** at "Do you already have a DOI?" answer **No**, then click
-   **Get a DOI now!**. The DOI is reserved but not active until you publish.
-   *Optional:* send me the reserved DOI before you publish and I will print it
-   in the paper and rebuild the PDF (the source zip does not change; the PDF and
-   materials zip get new checksums, so re-upload those two).
+4. **DOI:** at "Do you already have a DOI?" answer **No**; Zenodo assigns
+   one when you publish.
 5. **Metadata:** copy the fields below.
 6. *(Optional)* **Communities:** add the record to a compression or
    open-source software community.
@@ -49,9 +46,6 @@ HP40 and hpd: Profiling, Data-Mining and Rebuilding an Integer-Exact Context Mix
 **Publication date:** `2026-11-05`
 
 **Creators:** Loch, Odin — add your ORCID if you have one; affiliation optional.
-The paper's byline reads "Odin Loch (with Claude Code)"; keep or change that
-before publishing (it is in `paper/hp40/sections/00_abstract.md`,
-`paper/hp40/HPD_part2.md` and `paper/hp40/scripts/combine.py`).
 
 **Description:**
 ```
@@ -79,9 +73,7 @@ HP40
 hpd
 ```
 
-**Licence:** GNU Affero General Public License v3.0 — the repository's
-`LICENSE` is the plain AGPL v3 text; pick "only" or "or later" in Zenodo to
-match what you intend.
+**Licence:** GNU Affero General Public License v3.0 or later (`AGPL-3.0-or-later`).
 
 **Related works:**
 
@@ -93,8 +85,3 @@ match what you intend.
 **Software** section (if shown): repository
 `https://github.com/odin-loki/HPv40-Compression-Algorithm`, programming
 language C++, development status Active.
-
-## After publishing
-
-Send me the DOI and I will add it, with a Zenodo badge, to `README.md`,
-`compress/hpd/README.md` and the paper, then push.

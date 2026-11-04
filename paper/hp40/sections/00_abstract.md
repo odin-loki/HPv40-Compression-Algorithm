@@ -1,6 +1,6 @@
 # HP40 and HP40-Lite as General-Purpose Compressors: A Profiling and Data-Mining Study of an Integer-Exact Context Mixer
 
-**Author:** Odin Loch (with Claude Code)
+**Author:** Odin Loch
 **Date:** 2026-11-03
 **Status:** Research report. All numbers are measured in this study unless cited to the upstream lab log. Raw data, scripts and figures live next to this file (`paper/hp40/`).
 

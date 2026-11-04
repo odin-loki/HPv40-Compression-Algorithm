@@ -1,6 +1,6 @@
 # Part II — hpd: turning HP40 into a day-to-day compressor
 
-**Author:** Odin Loch (with Claude Code) · **Date:** 2026-11-05 · **Code:** [`compress/hpd/`](../../compress/hpd/) · **Source package:** [`dist/hpd-1.2.0-src.zip`](../../dist/hpd-1.2.0-src.zip) (§9)
+**Author:** Odin Loch · **Date:** 2026-11-05 · **Code:** [`compress/hpd/`](../../compress/hpd/) · **Source package:** [`dist/hpd-1.2.0-src.zip`](../../dist/hpd-1.2.0-src.zip) (§9)
 **Follows:** [`HP40_paper.md`](HP40_paper.md) (Part I: profiling and data-mining HP40 / HP40-Lite)
 
 Part I found that HP40 compresses general data 20% better than xz -9e but is
