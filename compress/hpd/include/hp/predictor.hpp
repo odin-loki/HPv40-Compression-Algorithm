@@ -41,6 +41,22 @@
 
 namespace hp {
 
+#ifndef HPD_APM2
+#define HPD_APM2 0
+#endif
+#ifndef HPD_WA2
+#define HPD_WA2 1
+#endif
+#ifndef HPD_WB2
+#define HPD_WB2 4
+#endif
+#ifndef HPD_WG2
+#define HPD_WG2 1
+#endif
+#ifndef HPD_WO2
+#define HPD_WO2 2
+#endif
+
 // hpd: per-model table cap, relative to table_bits. HP40 let the word tables
 // grow 9 bits past the base (2^31 slots at --mem 22). Set by the Predictor
 // constructor for the thread building it; read only while its models are built.
@@ -200,6 +216,9 @@ class Predictor {
           apm_c0_(256),
           apm_lex_(256 * 256),
           apm_gria_(GriaGate::kBuckets * 256),
+#if HPD_APM2
+          apm_o2_(1 << 16),
+#endif
           hedge_(kNumGates),
           bias_(256) {
         counter_init(bias_.data(), bias_.size());
@@ -315,7 +334,17 @@ class Predictor {
         const int a = apm_c0_.refine(pr, c0_);
         const int b = apm_lex_.refine(pr, static_cast<int>(hist_ & 0xff) * 256 + c0_);
         const int g = apm_gria_.refine(pr, gria_.bucket() * 256 + c0_);
+#if HPD_APM2
+        {
+            // hpd: order-2 (or 3) refinement, lpaq-style: hash of the last bytes xor c0.
+            const std::uint32_t hh = static_cast<std::uint32_t>(
+                ((hist_ & (HPD_APM2 == 3 ? 0xffffffull : 0xffffull)) * 0x9E3779B1ull) >> 16);
+            const int o = apm_o2_.refine(pr, static_cast<int>((hh ^ static_cast<std::uint32_t>(c0_)) & 0xffff));
+            pr_final_ = clamp_int((HPD_WA2 * a + HPD_WB2 * b + HPD_WG2 * g + HPD_WO2 * o) >> 3, 1, 4094);
+        }
+#else
         pr_final_ = clamp_int((HP_W0 * pr + HP_WA * a + HP_WB * b + HP_WG * g) >> 3, 1, 4094);
+#endif
         return pr_final_;
     }
 
@@ -327,6 +356,9 @@ class Predictor {
         apm_c0_.update(y);
         apm_lex_.update(y);
         apm_gria_.update(y);
+#if HPD_APM2
+        apm_o2_.update(y);
+#endif
 
         counter_update(bias_[c0_], y, 1023);
         const int ens = pr_final_;
@@ -538,6 +570,9 @@ class Predictor {
     DiscoveryPool pool_;
     MixerNet mixer_;
     APM apm_c0_, apm_lex_, apm_gria_;
+#if HPD_APM2
+    APM apm_o2_;
+#endif
     Hedge hedge_;
     std::vector<Counter> bias_;
     GriaGate gria_;

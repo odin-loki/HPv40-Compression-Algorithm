@@ -354,19 +354,22 @@ int main(int argc, char** argv) {
                 const std::uint8_t* q = bh + 5;
                 b.raw = static_cast<std::uint32_t>(get(q, 4));
                 const std::size_t len = static_cast<std::size_t>(get(q, 4));
+                // Reject impossible headers before allocating anything.
+                if (b.method > kCM || (b.method == kStored && len != b.raw) || b.table_bits < 16 || b.table_bits > 28 ||
+                    b.disc_slots < 1 || b.disc_slots > 12 || b.slot_extra > 32 || done + b.raw > n) {
+                    std::fprintf(stderr, "corrupt block header\n"); std::fclose(in); std::fclose(f); return 1;
+                }
                 b.data.resize(len);
                 if (len && std::fread(b.data.data(), 1, len, in) != len) { std::fprintf(stderr, "truncated archive\n"); std::fclose(in); std::fclose(f); return 1; }
                 out[j].resize(b.raw);
+                done += b.raw;          // counted here; checked against n at the end
             }
             std::atomic<bool> ok{true};
             parallel_for(cnt, threads, [&](std::size_t j) {
                 if (!decompress_block(blocks[j], out[j].data())) ok = false;
             });
             if (!ok) { std::fprintf(stderr, "corrupt block\n"); std::fclose(in); std::fclose(f); return 1; }
-            for (std::size_t j = 0; j < cnt; ++j) {
-                std::fwrite(out[j].data(), 1, out[j].size(), f);
-                done += out[j].size();
-            }
+            for (std::size_t j = 0; j < cnt; ++j) std::fwrite(out[j].data(), 1, out[j].size(), f);
         }
         std::fclose(in);
         if (std::fclose(f) != 0) { std::perror(outp); return 1; }

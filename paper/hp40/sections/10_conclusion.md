@@ -28,6 +28,12 @@ component that adapts HP40 to data nobody wrote a model for (it alone is worth
 22% on a spreadsheet); and seven text families win under 1% of bits each on
 general data.
 
+**Follow-up.** [Part II](HPD_part2.md) applies these findings: **hpd**
+(`compress/hpd/`) is HP40-Lite with bucketed, prefetched tables,
+demand-zero memory, a record model, an x86 transform and parallel blocks.
+It is 1.55% smaller than HP40 on the GP set, 5.6× faster and uses 1/18 of
+the memory, and 19.4% smaller than xz -9e on the full Silesia corpus.
+
 ## Appendix A. Reproducing this paper
 
 ```bash
