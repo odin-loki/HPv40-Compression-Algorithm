@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
 #include <thread>
 #include <unordered_set>
@@ -28,7 +29,7 @@
 namespace {
 
 constexpr char kMagic[4] = {'H', 'P', 'D', '1'};
-constexpr int kVersion = 1;
+constexpr int kVersion = 2;
 #ifndef HPD_SLOT_EXTRA
 #define HPD_SLOT_EXTRA 2
 #endif
@@ -126,7 +127,7 @@ bool looks_like_x86(const std::uint8_t* p, std::size_t n) {
 
 // ---------------------------------------------------------------- one block
 struct Block {
-    std::uint8_t method = kStored, filters = 0, table_bits = 16, slot_extra = 32;
+    std::uint8_t method = kStored, filters = 0, table_bits = 16, slot_extra = 32, disc_slots = 4;
     std::uint32_t raw = 0;
     std::vector<std::uint8_t> data;
 };
@@ -139,7 +140,7 @@ int auto_table_bits(std::size_t n, int cap) {
     return b;
 }
 
-void compress_block(const std::uint8_t* src, std::size_t n, int bits_cap, int force_bits, int x86_mode, int slot_extra, Block& out) {
+void compress_block(const std::uint8_t* src, std::size_t n, int bits_cap, int force_bits, int x86_mode, int slot_extra, int disc_slots, Block& out) {
     out.raw = static_cast<std::uint32_t>(n);
     std::vector<std::uint8_t> buf(src, src + n);
     const bool x86 = x86_mode == 1 || (x86_mode < 0 && looks_like_x86(src, n));
@@ -148,6 +149,8 @@ void compress_block(const std::uint8_t* src, std::size_t n, int bits_cap, int fo
     cfg.table_bits = force_bits > 0 ? force_bits : auto_table_bits(n, bits_cap);
     cfg.normalize();
     cfg.slot_extra = slot_extra;
+    cfg.disc_slots = disc_slots;
+    out.disc_slots = static_cast<std::uint8_t>(disc_slots);
     out.table_bits = static_cast<std::uint8_t>(cfg.table_bits);
     out.slot_extra = static_cast<std::uint8_t>(slot_extra);
     hp::Predictor pred(cfg);
@@ -186,6 +189,7 @@ bool decompress_block(const Block& b, std::uint8_t* dst) {
     cfg.table_bits = b.table_bits;
     cfg.normalize();
     cfg.slot_extra = b.slot_extra;
+    cfg.disc_slots = b.disc_slots;
     hp::Predictor pred(cfg);
     MemDecoder dec(b.data.data(), b.data.data() + b.data.size());
     for (std::uint32_t k = 0; k < b.raw; ++k) {
@@ -206,17 +210,6 @@ bool decompress_block(const Block& b, std::uint8_t* dst) {
 }
 
 // ---------------------------------------------------------------- io helpers
-bool read_file(const char* path, std::vector<std::uint8_t>& out) {
-    std::FILE* f = std::fopen(path, "rb");
-    if (!f) { std::perror(path); return false; }
-    std::fseek(f, 0, SEEK_END);
-    const long long n = std::ftell(f);
-    std::fseek(f, 0, SEEK_SET);
-    out.resize(static_cast<std::size_t>(n));
-    const bool ok = n == 0 || std::fread(out.data(), 1, out.size(), f) == out.size();
-    std::fclose(f);
-    return ok;
-}
 void put(std::vector<std::uint8_t>& o, std::uint64_t v, int bytes) {
     for (int i = 0; i < bytes; ++i) o.push_back(static_cast<std::uint8_t>(v >> (8 * i)));
 }
@@ -238,7 +231,7 @@ void parallel_for(std::size_t n, int threads, F f) {
 
 int usage() {
     std::fprintf(stderr,
-        "usage: hpd c [-t threads] [-m table_bits 16..22] [-M cap_bits] [-g slot_extra] [-b block_MiB] [-x 0|1] <in> <out>\n"
+        "usage: hpd c [-9] [-t threads] [-m table_bits 16..22] [-M cap_bits] [-g slot_extra] [-D slots] [-b block_MiB] [-x 0|1] <in> <out>\n"
         "       hpd d [-t threads] <in> <out>\n");
     return 2;
 }
@@ -249,7 +242,7 @@ int main(int argc, char** argv) {
     if (argc < 4) return usage();
     const char* mode = argv[1];
     int threads = static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
-    int force_bits = 0, bits_cap = 22, x86_mode = -1, slot_extra = HPD_SLOT_EXTRA;
+    int force_bits = 0, bits_cap = 22, x86_mode = -1, slot_extra = HPD_SLOT_EXTRA, disc_slots = HP_DISC_SLOTS;
     std::size_t block_mib = 0;      // 0 = auto
     int i = 2;
     for (; i < argc - 2; ++i) {
@@ -259,6 +252,8 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "-b") && i + 1 < argc - 2) block_mib = std::strtoull(argv[++i], nullptr, 10);
         else if (!std::strcmp(argv[i], "-x") && i + 1 < argc - 2) x86_mode = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "-g") && i + 1 < argc - 2) slot_extra = std::atoi(argv[++i]);
+        else if (!std::strcmp(argv[i], "-9")) disc_slots = 12;      // max: 12 discovery slots
+        else if (!std::strcmp(argv[i], "-D") && i + 1 < argc - 2) disc_slots = std::atoi(argv[++i]);
         else return usage();
     }
     const char* inp = argv[argc - 2];
@@ -266,84 +261,116 @@ int main(int argc, char** argv) {
     const auto t0 = std::chrono::steady_clock::now();
 
     if (!std::strcmp(mode, "c")) {
-        std::vector<std::uint8_t> in;
-        if (!read_file(inp, in)) return 1;
-        const std::size_t n = in.size();
+        std::error_code ec;
+        const std::uint64_t n = std::filesystem::file_size(inp, ec);
+        if (ec) { std::fprintf(stderr, "%s: %s\n", inp, ec.message().c_str()); return 1; }
+        std::FILE* in = std::fopen(inp, "rb");
+        if (!in) { std::perror(inp); return 1; }
         // Auto blocks: one block up to 16 MiB (splitting costs ratio: 8 MiB of
         // enwik8 is 2.7% larger as 2 blocks, 6% as 4); beyond that, enough
-        // blocks to keep every thread busy, never smaller than 16 MiB.
-        std::size_t bs = block_mib ? block_mib << 20 : 0;
+        // blocks to keep every thread busy, never smaller than 16 MiB and never
+        // larger than 256 MiB (memory: a batch holds threads x block bytes).
+        std::uint64_t bs = block_mib ? std::uint64_t(block_mib) << 20 : 0;
         if (!bs) {
-            const std::size_t min_bs = std::size_t(16) << 20;
-            bs = n <= min_bs ? std::max<std::size_t>(n, 1)
-                 : std::max<std::size_t>(min_bs, (n + threads - 1) / threads);
+            const std::uint64_t min_bs = std::uint64_t(16) << 20, max_bs = std::uint64_t(256) << 20;
+            bs = n <= min_bs ? std::max<std::uint64_t>(n, 1)
+                 : std::min(max_bs, std::max(min_bs, (n + threads - 1) / threads));
         }
         if (bs > 0xffffffffu) bs = 0xffffffffu;
-        const std::size_t nb = n ? (n + bs - 1) / bs : 0;
-        std::vector<Block> blocks(nb);
-        parallel_for(nb, threads, [&](std::size_t k) {
-            const std::size_t off = k * bs, len = std::min(bs, n - off);
-            compress_block(in.data() + off, len, bits_cap, force_bits, x86_mode, slot_extra, blocks[k]);
-        });
+        const std::uint64_t nb = n ? (n + bs - 1) / bs : 0;
+        std::FILE* f = std::fopen(outp, "wb");
+        if (!f) { std::perror(outp); std::fclose(in); return 1; }
         std::vector<std::uint8_t> hdr;
         hdr.insert(hdr.end(), kMagic, kMagic + 4);
         hdr.push_back(kVersion);
         put(hdr, n, 8);
         put(hdr, nb, 4);
-        std::FILE* f = std::fopen(outp, "wb");
-        if (!f) { std::perror(outp); return 1; }
         std::fwrite(hdr.data(), 1, hdr.size(), f);
-        std::size_t total = hdr.size();
-        for (const Block& b : blocks) {
-            std::vector<std::uint8_t> bh;
-            bh.push_back(b.method); bh.push_back(b.filters); bh.push_back(b.table_bits); bh.push_back(b.slot_extra);
-            put(bh, b.raw, 4); put(bh, b.data.size(), 4);
-            std::fwrite(bh.data(), 1, bh.size(), f);
-            std::fwrite(b.data.data(), 1, b.data.size(), f);
-            total += bh.size() + b.data.size();
-        }
-        std::fclose(f);
-        const double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        std::uint64_t total = hdr.size(), done = 0;
         int stored = 0, x86 = 0;
-        for (const Block& b : blocks) { stored += b.method == kStored; x86 += (b.filters & kFilterE8) != 0; }
-        std::fprintf(stderr, "%zu -> %zu B (%.3f bpc), %zu block(s) [%d stored, %d x86], %.1f s, %.1f KiB/s\n",
-                     n, total, n ? 8.0 * total / n : 0.0, nb, stored, x86, s, n / 1024.0 / (s > 0 ? s : 1));
+        // Stream: read one batch of blocks (one per thread), compress the batch
+        // in parallel, write it in order, repeat. Memory ~ threads x block.
+        const std::size_t batch = static_cast<std::size_t>(std::max(1, threads));
+        std::vector<std::vector<std::uint8_t>> raw(batch);
+        std::vector<Block> blocks(batch);
+        for (std::uint64_t k0 = 0; k0 < nb; k0 += batch) {
+            const std::size_t cnt = static_cast<std::size_t>(std::min<std::uint64_t>(batch, nb - k0));
+            for (std::size_t j = 0; j < cnt; ++j) {
+                const std::uint64_t len = std::min<std::uint64_t>(bs, n - (k0 + j) * bs);
+                raw[j].resize(static_cast<std::size_t>(len));
+                if (len && std::fread(raw[j].data(), 1, raw[j].size(), in) != raw[j].size()) {
+                    std::fprintf(stderr, "%s: read error\n", inp); std::fclose(in); std::fclose(f); return 1;
+                }
+                blocks[j] = Block();
+            }
+            parallel_for(cnt, threads, [&](std::size_t j) {
+                compress_block(raw[j].data(), raw[j].size(), bits_cap, force_bits, x86_mode, slot_extra, disc_slots, blocks[j]);
+            });
+            for (std::size_t j = 0; j < cnt; ++j) {
+                const Block& b = blocks[j];
+                std::vector<std::uint8_t> bh;
+                bh.push_back(b.method); bh.push_back(b.filters); bh.push_back(b.table_bits); bh.push_back(b.slot_extra); bh.push_back(b.disc_slots);
+                put(bh, b.raw, 4); put(bh, b.data.size(), 4);
+                std::fwrite(bh.data(), 1, bh.size(), f);
+                std::fwrite(b.data.data(), 1, b.data.size(), f);
+                total += bh.size() + b.data.size();
+                stored += b.method == kStored; x86 += (b.filters & kFilterE8) != 0;
+                done += b.raw;
+                std::vector<std::uint8_t>().swap(blocks[j].data);
+            }
+            if (nb > 1) std::fprintf(stderr, "\r%llu/%llu MiB", (unsigned long long)(done >> 20), (unsigned long long)(n >> 20));
+        }
+        std::fclose(in);
+        if (std::fclose(f) != 0) { std::perror(outp); return 1; }
+        const double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        std::fprintf(stderr, "%s%llu -> %llu B (%.3f bpc), %llu block(s) [%d stored, %d x86], %.1f s, %.1f KiB/s\n",
+                     nb > 1 ? "\r" : "", (unsigned long long)n, (unsigned long long)total, n ? 8.0 * total / n : 0.0,
+                     (unsigned long long)nb, stored, x86, s, n / 1024.0 / (s > 0 ? s : 1));
         return 0;
     }
     if (!std::strcmp(mode, "d")) {
-        std::vector<std::uint8_t> a;
-        if (!read_file(inp, a)) return 1;
-        if (a.size() < 17 || std::memcmp(a.data(), kMagic, 4) || a[4] != kVersion) {
-            std::fprintf(stderr, "not an hpd v%d archive\n", kVersion); return 1;
+        std::FILE* in = std::fopen(inp, "rb");
+        if (!in) { std::perror(inp); return 1; }
+        std::uint8_t h[17];
+        if (std::fread(h, 1, 17, in) != 17 || std::memcmp(h, kMagic, 4) || h[4] != kVersion) {
+            std::fprintf(stderr, "not an hpd v%d archive\n", kVersion); std::fclose(in); return 1;
         }
-        const std::uint8_t* p = a.data() + 5;
-        const std::uint8_t* end = a.data() + a.size();
-        const std::uint64_t n = get(p, 8);
-        const std::uint32_t nb = static_cast<std::uint32_t>(get(p, 4));
-        std::vector<Block> blocks(nb);
-        std::vector<std::size_t> offs(nb);
-        std::size_t off = 0;
-        for (std::uint32_t k = 0; k < nb; ++k) {
-            if (end - p < 12) { std::fprintf(stderr, "truncated\n"); return 1; }
-            Block& b = blocks[k];
-            b.method = *p++; b.filters = *p++; b.table_bits = *p++; b.slot_extra = *p++;
-            b.raw = static_cast<std::uint32_t>(get(p, 4));
-            const std::size_t len = static_cast<std::size_t>(get(p, 4));
-            if (static_cast<std::size_t>(end - p) < len) { std::fprintf(stderr, "truncated\n"); return 1; }
-            b.data.assign(p, p + len); p += len;
-            offs[k] = off; off += b.raw;
-        }
-        if (off != n) { std::fprintf(stderr, "size mismatch\n"); return 1; }
-        std::vector<std::uint8_t> out(static_cast<std::size_t>(n));
-        std::atomic<bool> ok{true};
-        parallel_for(nb, threads, [&](std::size_t k) {
-            if (!decompress_block(blocks[k], out.data() + offs[k])) ok = false;
-        });
-        if (!ok) { std::fprintf(stderr, "corrupt block\n"); return 1; }
+        const std::uint8_t* hp_ = h + 5;
+        const std::uint64_t n = get(hp_, 8);
+        const std::uint64_t nb = get(hp_, 4);
         std::FILE* f = std::fopen(outp, "wb");
-        if (!f) { std::perror(outp); return 1; }
-        std::fwrite(out.data(), 1, out.size(), f);
-        std::fclose(f);
+        if (!f) { std::perror(outp); std::fclose(in); return 1; }
+        const std::size_t batch = static_cast<std::size_t>(std::max(1, threads));
+        std::vector<Block> blocks(batch);
+        std::vector<std::vector<std::uint8_t>> out(batch);
+        std::uint64_t done = 0;
+        for (std::uint64_t k0 = 0; k0 < nb; k0 += batch) {
+            const std::size_t cnt = static_cast<std::size_t>(std::min<std::uint64_t>(batch, nb - k0));
+            for (std::size_t j = 0; j < cnt; ++j) {
+                std::uint8_t bh[13];
+                if (std::fread(bh, 1, 13, in) != 13) { std::fprintf(stderr, "truncated archive\n"); std::fclose(in); std::fclose(f); return 1; }
+                Block& b = blocks[j];
+                b.method = bh[0]; b.filters = bh[1]; b.table_bits = bh[2]; b.slot_extra = bh[3]; b.disc_slots = bh[4];
+                const std::uint8_t* q = bh + 5;
+                b.raw = static_cast<std::uint32_t>(get(q, 4));
+                const std::size_t len = static_cast<std::size_t>(get(q, 4));
+                b.data.resize(len);
+                if (len && std::fread(b.data.data(), 1, len, in) != len) { std::fprintf(stderr, "truncated archive\n"); std::fclose(in); std::fclose(f); return 1; }
+                out[j].resize(b.raw);
+            }
+            std::atomic<bool> ok{true};
+            parallel_for(cnt, threads, [&](std::size_t j) {
+                if (!decompress_block(blocks[j], out[j].data())) ok = false;
+            });
+            if (!ok) { std::fprintf(stderr, "corrupt block\n"); std::fclose(in); std::fclose(f); return 1; }
+            for (std::size_t j = 0; j < cnt; ++j) {
+                std::fwrite(out[j].data(), 1, out[j].size(), f);
+                done += out[j].size();
+            }
+        }
+        std::fclose(in);
+        if (std::fclose(f) != 0) { std::perror(outp); return 1; }
+        if (done != n) { std::fprintf(stderr, "size mismatch: %llu vs %llu\n", (unsigned long long)done, (unsigned long long)n); return 1; }
         const double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         std::fprintf(stderr, "decompressed %llu B, %.1f s\n", static_cast<unsigned long long>(n), s);
         return 0;

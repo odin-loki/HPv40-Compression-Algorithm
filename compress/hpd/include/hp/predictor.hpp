@@ -49,6 +49,7 @@ inline thread_local int tl_slot_cap = HP_SLOT_MAX;
 struct Config {
     int table_bits = 22;
     int slot_extra = 32;    // max bits a model may grow above table_bits (32 = HP40 behaviour)
+    int disc_slots = HP_DISC_SLOTS;   // discovery-pool slots (1..12)
     int buf_bits = 26;
     int match_bits = 22;
     int mixer_lr = 2;
@@ -105,6 +106,9 @@ class Predictor {
         kGateWiki, kGatePattern,
         kGateArgmax,
         kGateWordPos,
+#if HPD_REC_GATE
+        kGateRecord,
+#endif
         kNumGates
     };
 
@@ -191,7 +195,7 @@ class Predictor {
                              cfg.match_bits > 2 ? cfg.match_bits - 2 : cfg.match_bits, 3, histbuf_)
           },
           hebb_(cfg.table_bits, 255),
-          pool_(cfg.table_bits, 0xC0FFEEull),
+          pool_(cfg.table_bits, 0xC0FFEEull, cfg.disc_slots),
           mixer_(kNumExperts, gate_sizes(), 256, cfg.mixer_lr, gate_rates(cfg.mixer_lr)),
           apm_c0_(256),
           apm_lex_(256 * 256),
@@ -227,6 +231,7 @@ class Predictor {
         chain[nchain++] = &sp24_;
         chain[nchain++] = &col_;
         chain[nchain++] = &tag_;
+        if (HP_CM_WBI) chain[nchain++] = &wbi_;   // word bigram (off in Lite)
         chain[nchain++] = &brk_;
         chain[nchain++] = &sentst_;
         for (int i = 0; i < nchain; ++i) {
@@ -266,7 +271,7 @@ class Predictor {
         {
             int dout[kDiscovered];
             pool_.predict(c0_, o1_.last_p(), dout);
-            for (int i = 0; i < kDiscovered; ++i) {
+            for (int i = 0; i < pool_.outputs(); ++i) {
                 mixer_.add(dout[i]);
                 exp_p_[n_exp_++] = squash(dout[i]);
             }
@@ -289,6 +294,15 @@ class Predictor {
         mixer_.set_ctx(kGatePattern, cache_.cls());
         mixer_.set_ctx(kGateArgmax, argmax_bin(exp_p_, n_exp_));
         mixer_.set_ctx(kGateWordPos, streams_.word_len() > 15 ? 15 : streams_.word_len());
+#if HPD_REC_GATE
+        {
+            // 0 = no record period; else the relative position inside the record.
+            const int r = rec_.period();
+            int g = 0;
+            if (r) g = 1 + (r <= 63 ? rec_.column() : rec_.column() * 62 / r);
+            mixer_.set_ctx(kGateRecord, g > 63 ? 63 : g);
+        }
+#endif
         mixer_.set_ctx2(c0_);
         int pr = mixer_.mix();
 
@@ -340,7 +354,7 @@ class Predictor {
             // Second nibble: issue every context model's cache-line load now,
             // so the predict() calls for bit 4 find them in flight or in cache.
             ContextModel* cms[] = {&o1_, &o2_, &o3_, &o4_, &o6_, &word_, &sp13_, &sp24_,
-                                   &col_, &tag_, &brk_, &sentst_};
+                                   &col_, &tag_, &brk_, &sentst_, &wbi_};
             for (ContextModel* m : cms) m->prefetch_nibble(c0_);
             pool_.prefetch_nibble(c0_);
 #if HPD_RECORD
@@ -375,6 +389,9 @@ class Predictor {
         s.push_back(PatternCache::kNClass);
         s.push_back(16);
         s.push_back(16);
+#if HPD_REC_GATE
+        s.push_back(64);
+#endif
         return s;
     }
 
@@ -387,6 +404,9 @@ class Predictor {
         r.push_back(3);
         r.push_back(3);
         r.push_back(3);
+#if HPD_REC_GATE
+        r.push_back(3);
+#endif
         return r;
     }
 

@@ -14,7 +14,7 @@
 #define HP_CM_TAG 1
 #endif
 #ifndef HP_CM_WBI
-#define HP_CM_WBI 0
+#define HP_CM_WBI 1
 #endif
 #ifndef HP_CTW
 #define HP_CTW 0

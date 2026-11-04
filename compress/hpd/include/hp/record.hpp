@@ -21,16 +21,26 @@
 #ifndef HPD_RECORD
 #define HPD_RECORD 1
 #endif
+#ifndef HPD_REC_GATE
+#define HPD_REC_GATE 1      // mixer weight set chosen by position inside the record (-0.26%)
+#endif
+#ifndef HPD_REC_2D
+#define HPD_REC_2D 0        // 2-D raster context: measured -0.03%, not worth its time
+#endif
 
 namespace hp {
 
 class RecordModel {
  public:
-    static constexpr int kModels = 3;
+    static constexpr int kModels = 3 + (HPD_REC_2D ? 1 : 0);
     static constexpr int kOutputs = kModels * ContextModel::kOutputs;
 
     explicit RecordModel(int table_bits)
-        : cm_{ContextModel(table_bits, 255), ContextModel(table_bits, 255), ContextModel(table_bits, 255)},
+        : cm_{ContextModel(table_bits, 255), ContextModel(table_bits, 255), ContextModel(table_bits, 255)
+#if HPD_REC_2D
+              , ContextModel(table_bits, 255)
+#endif
+          },
           ring_(kMask + 1) {
         std::memset(last_, 0, sizeof(last_));
         std::memset(d1_, 0, sizeof(d1_));
@@ -87,6 +97,12 @@ class RecordModel {
         cm_[0].set_context(h(0x5245431ull + r, static_cast<std::uint64_t>(above) << 8 | above2));
         cm_[1].set_context(h(0x5245432ull + r, static_cast<std::uint64_t>(above) << 8 | left));
         cm_[2].set_context(h(0x5245433ull + r, static_cast<std::uint64_t>(col) << 8 | above));
+#if HPD_REC_2D
+        // 2-D neighbourhood for raster data: above-left, above, above-right, left.
+        cm_[3].set_context(h(0x5245434ull + r, static_cast<std::uint64_t>(at(r + 1)) << 24 |
+                                                static_cast<std::uint64_t>(above) << 16 |
+                                                static_cast<std::uint64_t>(r > 1 ? at(r - 1) : 0) << 8 | left));
+#endif
     }
 
     ContextModel cm_[kModels];

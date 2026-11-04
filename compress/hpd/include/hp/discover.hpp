@@ -62,12 +62,14 @@ class Rng {
 
 class DiscoveryPool {
  public:
-    static constexpr int kSlots = HP_DISC_SLOTS;
+    static constexpr int kSlots = 12;            // maximum; n_ slots are live (hpd: runtime, default 4)
     static constexpr int kEvalBytes = HP_DISC_EVAL;   // review cadence
     static constexpr int kMinAge = 3;         // reviews before a slot is eligible
 
-    DiscoveryPool(int table_bits, std::uint64_t seed) : rng_(seed) {
-        for (int i = 0; i < kSlots; ++i) {
+    DiscoveryPool(int table_bits, std::uint64_t seed, int slots = HP_DISC_SLOTS)
+        : n_(slots < 1 ? 1 : (slots > kSlots ? kSlots : slots)), rng_(seed) {
+        models_.reserve(static_cast<std::size_t>(n_));
+        for (int i = 0; i < n_; ++i) {
             models_.emplace_back(table_bits, 255);
             mask_[i] = fresh_mask();
             loss_[i] = 0;
@@ -77,7 +79,7 @@ class DiscoveryPool {
 
     // Set each slot's context from the byte history, using its mask.
     void set_contexts(std::uint64_t hist, std::uint64_t hist2) {
-        for (int i = 0; i < kSlots; ++i) {
+        for (int i = 0; i < n_; ++i) {
             std::uint64_t key = 0;
             std::uint32_t m = mask_[i];
             int shift = 0;
@@ -96,20 +98,20 @@ class DiscoveryPool {
 
 #if HPD_BUCKET
     void prefetch_nibble(int c0) {
-        for (int i = 0; i < kSlots; ++i) models_[i].prefetch_nibble(c0);
+        for (int i = 0; i < n_; ++i) models_[i].prefetch_nibble(c0);
     }
 #endif
     void predict(int c0, int backoff_p12, int* out) {
-        for (int i = 0; i < kSlots; ++i)
+        for (int i = 0; i < n_; ++i)
             models_[i].predict(c0, backoff_p12, out + i * ContextModel::kOutputs);
         // Remember each slot's own opinion for the MDL bookkeeping.
-        for (int i = 0; i < kSlots; ++i) p_[i] = models_[i].last_p();
+        for (int i = 0; i < n_; ++i) p_[i] = models_[i].last_p();
     }
 
     // ens_err: |ensemble probability - outcome| in 12-bit. Slots are charged
     // and credited relative to how hard this bit was for the ensemble.
     void update(int y, int ens_err) {
-        for (int i = 0; i < kSlots; ++i) {
+        for (int i = 0; i < n_; ++i) {
             models_[i].update(y);
             const int pa = y ? p_[i] : 4096 - p_[i];
             const std::uint32_t cost =
@@ -125,12 +127,12 @@ class DiscoveryPool {
     void end_byte() {
         if (++bytes_ < kEvalBytes) return;
         bytes_ = 0;
-        for (int i = 0; i < kSlots; ++i) ++age_[i];
+        for (int i = 0; i < n_; ++i) ++age_[i];
 
         // Kill the worst eligible slot; recycle it onto a fresh candidate.
         int worst = -1;
         std::uint64_t worst_loss = 0;
-        for (int i = 0; i < kSlots; ++i) {
+        for (int i = 0; i < n_; ++i) {
             if (age_[i] < kMinAge) continue;
             if (worst < 0 || loss_[i] > worst_loss) { worst = i; worst_loss = loss_[i]; }
         }
@@ -140,9 +142,11 @@ class DiscoveryPool {
             ++replaced_;
         }
         // Decay all books so old evidence fades and survivors stay contestable.
-        for (int i = 0; i < kSlots; ++i) loss_[i] = (loss_[i] * 3) >> 2;
+        for (int i = 0; i < n_; ++i) loss_[i] = (loss_[i] * 3) >> 2;
     }
 
+    int slots() const { return n_; }
+    int outputs() const { return n_ * ContextModel::kOutputs; }
     int slot_p(int i) const { return p_[i]; }
     std::uint32_t mask(int i) const { return mask_[i]; }
     int replaced() const { return replaced_; }
@@ -187,6 +191,7 @@ class DiscoveryPool {
         return 0x0110u;
     }
 
+    int n_;
     Rng rng_;
     std::vector<ContextModel> models_;
     std::uint32_t mask_[kSlots];
