@@ -29,6 +29,11 @@ for m in (16, 18, 20, 22, 24):
     CODECS[f"hp40lite_m{m}"] = hp("hp_v40lite", m)
 # extra binaries: hp:<binname>:<mem>
 def codec(name):
+    if name.startswith("hpd:"):          # hpd:<bin>:<space-separated compress args>
+        _, b, args = name.split(":", 2)
+        exe, a = os.path.join(BIN, b), args.split()
+        dargs = ["-t", a[a.index("-t") + 1]] if "-t" in a else []   # decoder takes only -t
+        return ([exe, "c"] + a + ["{i}", "{o}"], [exe, "d"] + dargs + ["{i}", "{o}"])
     if name.startswith("hp:"):
         _, b, m = name.split(":"); return hp(b, int(m))
     return CODECS[name]
