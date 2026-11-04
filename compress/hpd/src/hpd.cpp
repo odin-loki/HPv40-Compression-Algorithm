@@ -1,6 +1,6 @@
 // hpd — day-to-day context-mixing compressor built on HP40-Lite.
 //
-//   hpd c [-t threads] [-m table_bits] [-b block_MiB] [-x 0|1] <in> <out>
+//   hpd c [-t threads] [-m table_bits] [-b block_MiB | -B block_KiB] [-x 0|1] <in> <out>
 //   hpd d [-t threads] <in> <out>
 //
 // Differences from hp (HP40):
@@ -231,7 +231,7 @@ void parallel_for(std::size_t n, int threads, F f) {
 
 int usage() {
     std::fprintf(stderr,
-        "usage: hpd c [-9] [-t threads] [-m table_bits 16..22] [-M cap_bits] [-g slot_extra] [-D slots] [-b block_MiB] [-x 0|1] <in> <out>\n"
+        "usage: hpd c [-9] [-t threads] [-m table_bits 16..22] [-M cap_bits] [-g slot_extra] [-D slots] [-b block_MiB | -B block_KiB] [-x 0|1] <in> <out>\n"
         "       hpd d [-t threads] <in> <out>\n");
     return 2;
 }
@@ -244,12 +244,14 @@ int main(int argc, char** argv) {
     int threads = static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
     int force_bits = 0, bits_cap = 22, x86_mode = -1, slot_extra = HPD_SLOT_EXTRA, disc_slots = HP_DISC_SLOTS;
     std::size_t block_mib = 0;      // 0 = auto
+    std::size_t block_kib = 0;      // -B: block size in KiB (shards)
     int i = 2;
     for (; i < argc - 2; ++i) {
         if (!std::strcmp(argv[i], "-t") && i + 1 < argc - 2) threads = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "-m") && i + 1 < argc - 2) force_bits = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "-M") && i + 1 < argc - 2) bits_cap = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "-b") && i + 1 < argc - 2) block_mib = std::strtoull(argv[++i], nullptr, 10);
+        else if (!std::strcmp(argv[i], "-B") && i + 1 < argc - 2) block_kib = std::strtoull(argv[++i], nullptr, 10);
         else if (!std::strcmp(argv[i], "-x") && i + 1 < argc - 2) x86_mode = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "-g") && i + 1 < argc - 2) slot_extra = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "-9")) disc_slots = 12;      // max: 12 discovery slots
@@ -270,7 +272,7 @@ int main(int argc, char** argv) {
         // enwik8 is 2.7% larger as 2 blocks, 6% as 4); beyond that, enough
         // blocks to keep every thread busy, never smaller than 16 MiB and never
         // larger than 256 MiB (memory: a batch holds threads x block bytes).
-        std::uint64_t bs = block_mib ? std::uint64_t(block_mib) << 20 : 0;
+        std::uint64_t bs = block_kib ? std::uint64_t(block_kib) << 10 : (block_mib ? std::uint64_t(block_mib) << 20 : 0);
         if (!bs) {
             const std::uint64_t min_bs = std::uint64_t(16) << 20, max_bs = std::uint64_t(256) << 20;
             bs = n <= min_bs ? std::max<std::uint64_t>(n, 1)
