@@ -65,9 +65,16 @@ class StretchTable {
     std::int16_t t_[4096];
 };
 
+#if defined(__CUDACC__)
+__device__ std::uint64_t hp_dev_stretch[(sizeof(StretchTable) + 7) / 8];   // filled by the host
+#endif
 inline const StretchTable& stretch_table() {
+#if defined(__CUDA_ARCH__)
+    return *reinterpret_cast<const StretchTable*>(hp_dev_stretch);
+#else
     static const StretchTable t;
     return t;
+#endif
 }
 
 inline int stretch(int p) { return stretch_table()(p); }
@@ -117,7 +124,17 @@ struct Log2Table {
     std::uint32_t v[4097];
     Log2Table() { for (std::uint32_t x = 0; x <= 4096; ++x) v[x] = log2_q16_exact(x); }
 };
-inline const Log2Table& log2_table() { static const Log2Table t; return t; }
+#if defined(__CUDACC__)
+__device__ std::uint64_t hp_dev_log2[(sizeof(Log2Table) + 7) / 8];   // filled by the host
+#endif
+inline const Log2Table& log2_table() {
+#if defined(__CUDA_ARCH__)
+    return *reinterpret_cast<const Log2Table*>(hp_dev_log2);
+#else
+    static const Log2Table t;
+    return t;
+#endif
+}
 inline std::uint32_t log2_q16(std::uint32_t x) {
     return x <= 4096 ? log2_table().v[x] : log2_q16_exact(x);
 }

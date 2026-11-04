@@ -1,4 +1,4 @@
-# pc_shard_bench.ps1 — run on OdinsPC (Windows, PowerShell) from the Cypha repo root:
+# pc_shard_bench.ps1 — run on OdinsPC (Windows, PowerShell) from the repository root:
 #   powershell -ExecutionPolicy Bypass -File compress\hpd\tools\pc_shard_bench.ps1 -Path <file> [-Threads N]
 # Reports the machine (CPU cores, NVIDIA GPU if any), builds hpd, then compresses
 # <file> as 1, few and many shards and checks every round trip. Writes

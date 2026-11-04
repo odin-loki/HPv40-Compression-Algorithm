@@ -45,7 +45,25 @@
 #  include <unistd.h>
 #endif
 
+#if defined(__CUDACC__)
+// hpd-gpu (clang -x cuda -DHPD_GPU): the model headers are compiled for host and
+// device. System headers come first, outside the host/device region.
+#  include <cstddef>
+#  include <initializer_list>
+#  include <memory>
+#  include <new>
+#  include <unordered_map>
+#  include <utility>
+#  include <sys/mman.h>
+#  if defined(__AVX2__)
+#    include <immintrin.h>
+#  endif
+#  pragma clang force_cuda_host_device begin
+#endif
 #include "hp/predictor.hpp"
+#if defined(__CUDACC__)
+#  pragma clang force_cuda_host_device end
+#endif
 
 namespace {
 
@@ -53,7 +71,7 @@ namespace fs = std::filesystem;
 
 constexpr char kMagic[4] = {'H', 'P', 'D', '1'};
 constexpr int kVersion = 3;
-constexpr const char* kVersionText = "hpd 1.0.0 (writes archive format 3, reads 2 and 3)";
+constexpr const char* kVersionText = "hpd 1.1.0 (writes archive format 3, reads 2 and 3)";
 #ifndef HPD_SLOT_EXTRA
 #define HPD_SLOT_EXTRA 2
 #endif
@@ -313,56 +331,91 @@ int auto_table_bits(std::size_t n, int cap) {
 
 inline bool map_bit(const std::vector<std::uint8_t>& m, std::size_t c) { return (m[c >> 3] >> (c & 7)) & 1; }
 
-void compress_block(const std::uint8_t* src, std::size_t n, const Settings& s, Block& out) {
+// A block is compressed in three steps so the model loop can run elsewhere
+// (hpd-gpu): prepare (CRC, x86 transform, pass-through chunks, model settings),
+// the model loop over `kept`, and finish (stored-or-CM decision, chunk map).
+struct BlockPrep {
+    std::vector<std::uint8_t> filtered, skip, kept_buf, tail;
+    const std::uint8_t* kept = nullptr;
+    std::size_t kept_n = 0;
+    hp::Config cfg;
+};
+
+void store_block(const std::uint8_t* src, std::size_t n, Block& out) {
+    out.method = kStored; out.filters = 0; out.table_bits = 0; out.slot_extra = 0; out.disc_slots = 0;
+    out.chunk_log = 0; out.map.clear(); out.passed = 0;
+    out.data.assign(src, src + n);
+}
+
+// Returns false when the block is already final (stored); otherwise the caller
+// codes prep.kept[0..kept_n) with a Predictor(prep.cfg) into out.data.
+bool compress_prepare(const std::uint8_t* src, std::size_t n, const Settings& s, Block& out, BlockPrep& prep) {
     out = Block();
     out.raw = static_cast<std::uint32_t>(n);
     out.crc = crc32(0, src, n);
     out.has_crc = true;
-    auto store = [&] {
-        out.method = kStored; out.filters = 0; out.table_bits = 0; out.slot_extra = 0; out.disc_slots = 0;
-        out.chunk_log = 0; out.map.clear(); out.passed = 0;
-        out.data.assign(src, src + n);
-    };
-    if (n == 0) { store(); return; }
+    if (n == 0) { store_block(src, n, out); return false; }
 
-    std::vector<std::uint8_t> filtered;
     const std::uint8_t* buf = src;
     if (s.x86_mode == 1 || (s.x86_mode < 0 && looks_like_x86(src, n))) {
-        filtered.assign(src, src + n);
-        e8_apply(filtered.data(), n, true);
-        buf = filtered.data();
+        prep.filtered.assign(src, src + n);
+        e8_apply(prep.filtered.data(), n, true);
+        buf = prep.filtered.data();
         out.filters |= kFilterE8;
     }
 
     // Chunks to pass through; the model sees the other chunks back to back.
     const std::size_t cs = std::size_t(1) << kChunkLog;
-    std::vector<std::uint8_t> skip = s.bypass ? incompressible_chunks(buf, n) : std::vector<std::uint8_t>();
-    std::vector<std::uint8_t> kept_buf, tail;
-    const std::uint8_t* kept = buf;
-    std::size_t kept_n = n;
-    if (!skip.empty()) {
-        kept_buf.reserve(n);
-        for (std::size_t c = 0; c < skip.size(); ++c) {
+    if (s.bypass) prep.skip = incompressible_chunks(buf, n);
+    prep.kept = buf;
+    prep.kept_n = n;
+    if (!prep.skip.empty()) {
+        prep.kept_buf.reserve(n);
+        for (std::size_t c = 0; c < prep.skip.size(); ++c) {
             const std::size_t b = c * cs, e = std::min(n, b + cs);
-            auto& dst = skip[c] ? tail : kept_buf;
+            auto& dst = prep.skip[c] ? prep.tail : prep.kept_buf;
             dst.insert(dst.end(), buf + b, buf + e);
         }
-        kept = kept_buf.data();
-        kept_n = kept_buf.size();
-        out.passed = tail.size();
-        g_done += tail.size();
-        if (kept_n == 0) { store(); return; }
+        prep.kept = prep.kept_buf.data();
+        prep.kept_n = prep.kept_buf.size();
+        out.passed = prep.tail.size();
+        g_done += prep.tail.size();
+        if (prep.kept_n == 0) { store_block(src, n, out); return false; }
     }
 
-    hp::Config cfg;
-    cfg.table_bits = s.force_bits > 0 ? s.force_bits : auto_table_bits(kept_n, s.bits_cap);
-    cfg.normalize();
-    cfg.slot_extra = s.slot_extra;
-    cfg.disc_slots = s.disc_slots;
+    prep.cfg = hp::Config();
+    prep.cfg.table_bits = s.force_bits > 0 ? s.force_bits : auto_table_bits(prep.kept_n, s.bits_cap);
+    prep.cfg.normalize();
+    prep.cfg.slot_extra = s.slot_extra;
+    prep.cfg.disc_slots = s.disc_slots;
     out.disc_slots = static_cast<std::uint8_t>(s.disc_slots);
-    out.table_bits = static_cast<std::uint8_t>(cfg.table_bits);
+    out.table_bits = static_cast<std::uint8_t>(prep.cfg.table_bits);
     out.slot_extra = static_cast<std::uint8_t>(s.slot_extra);
-    hp::Predictor pred(cfg);
+    return true;
+}
+
+// out.data holds the flushed CM stream; gave_up means the model loop stopped early.
+void compress_finish(const std::uint8_t* src, std::size_t n, Block& out, const BlockPrep& prep, bool gave_up) {
+    if (gave_up || out.data.size() + prep.tail.size() >= n) {
+        store_block(src, n, out);
+        return;
+    }
+    out.method = kCM;
+    if (!prep.skip.empty()) {
+        out.chunk_log = kChunkLog;
+        out.map.assign((prep.skip.size() + 7) / 8, 0);
+        for (std::size_t c = 0; c < prep.skip.size(); ++c)
+            if (prep.skip[c]) out.map[c >> 3] |= static_cast<std::uint8_t>(1u << (c & 7));
+        out.data.insert(out.data.end(), prep.tail.begin(), prep.tail.end());
+    }
+}
+
+void compress_block(const std::uint8_t* src, std::size_t n, const Settings& s, Block& out) {
+    BlockPrep prep;
+    if (!compress_prepare(src, n, s, out, prep)) return;
+    const std::uint8_t* kept = prep.kept;
+    const std::size_t kept_n = prep.kept_n;
+    hp::Predictor pred(prep.cfg);
     out.data.clear();
     out.data.reserve(kept_n / 3 + 64);
     MemEncoder enc(out.data);
@@ -385,20 +438,13 @@ void compress_block(const std::uint8_t* src, std::size_t n, const Settings& s, B
     }
     g_done += k & 0xffff;
     enc.flush();
-    if (gave_up || out.data.size() + tail.size() >= n) {
-        g_done += n - k - out.passed;
-        store();
-        return;
-    }
-    out.method = kCM;
-    if (!skip.empty()) {
-        out.chunk_log = kChunkLog;
-        out.map.assign((skip.size() + 7) / 8, 0);
-        for (std::size_t c = 0; c < skip.size(); ++c)
-            if (skip[c]) out.map[c >> 3] |= static_cast<std::uint8_t>(1u << (c & 7));
-        out.data.insert(out.data.end(), tail.begin(), tail.end());
-    }
+    if (gave_up || out.data.size() + prep.tail.size() >= n) g_done += n - k - out.passed;
+    compress_finish(src, n, out, prep, gave_up);
 }
+
+#if defined(HPD_GPU)
+#include "hpd_gpu.cuh"
+#endif
 
 // Bytes passed through in a block of `raw` bytes with this chunk map.
 std::uint64_t passed_bytes(const Block& b) {
@@ -458,6 +504,29 @@ std::string decompress_block(const Block& b, std::uint8_t* dst) {
     if (b.has_crc && crc32(0, dst, b.raw) != b.crc) return "CRC mismatch (archive is damaged)";
     return "";
 }
+
+#if defined(HPD_GPU)
+// hpd-gpu: the model decoded the non-passed bytes into `kept`; rebuild the block.
+std::string decompress_finish(const Block& b, const std::vector<std::uint8_t>& kept, std::uint8_t* dst) {
+    const std::uint64_t tail = passed_bytes(b);
+    const std::size_t cm_len = b.data.size() - static_cast<std::size_t>(tail);
+    if (!b.chunk_log) {
+        if (b.raw) std::memcpy(dst, kept.data(), b.raw);
+    } else {
+        const std::size_t cs = std::size_t(1) << b.chunk_log;
+        const std::uint8_t* raw_part = b.data.data() + cm_len;
+        std::size_t k = 0;
+        for (std::size_t off = 0, c = 0; off < b.raw; off += cs, ++c) {
+            const std::size_t len = std::min<std::size_t>(cs, b.raw - off);
+            if (map_bit(b.map, c)) { std::memcpy(dst + off, raw_part, len); raw_part += len; }
+            else { std::memcpy(dst + off, kept.data() + k, len); k += len; }
+        }
+    }
+    if (b.filters & kFilterE8) e8_apply(dst, b.raw, false);
+    if (b.has_crc && crc32(0, dst, b.raw) != b.crc) return "CRC mismatch (archive is damaged)";
+    return "";
+}
+#endif
 
 // ---------------------------------------------------------------- platform helpers
 #if defined(_WIN32)
@@ -717,6 +786,7 @@ struct Options {
     std::uint64_t block = 0;         // bytes, 0 = auto
     Settings s;
     bool to_stdout = false, force = false, quiet = false, verbose = false;
+    bool gpu = false, bits_cap_set = false;
 };
 
 void usage(std::FILE* o) {
@@ -741,6 +811,8 @@ void usage(std::FILE* o) {
         "  -M bits    largest automatic table size, 16..24 (default 22)\n"
         "  -g bits    how far one model's table may grow above -m, 0..8 (default 2)\n"
         "  -D slots   discovery slots, 1..12 (default 4)\n"
+        "  -G         code on the NVIDIA GPU, one shard per GPU thread (hpd-gpu build only;\n"
+        "             default shards 1 MiB, tables -M 18; archives decode with plain hpd)\n"
         "  -h, -V     help, version\n",
         kVersionText);
 }
@@ -856,6 +928,12 @@ int do_compress(const std::string& in, const std::string& out, Options o) {
         if (need > avail)
             std::fprintf(stderr, "hpd: warning: %d threads may need %s, only %s free\n", threads, human(need).c_str(), human(avail).c_str());
     }
+    if (o.gpu) {
+        // Many small shards so every GPU thread has one; the CPU threads only prepare blocks.
+        threads = o.threads_set ? o.threads : hw;
+        bs = o.block ? o.block : (std::uint64_t(1) << 20);
+        if (!o.bits_cap_set) o.s.bits_cap = 18;
+    }
     if (bs > kMaxBlock) bs = kMaxBlock;
 
     Output w;
@@ -869,7 +947,8 @@ int do_compress(const std::string& in, const std::string& out, Options o) {
     int stored = 0, x86 = 0;
     Progress progress(!o.quiet && is_tty(stderr), size_known ? n_known : 0);
 
-    const std::size_t batch = static_cast<std::size_t>(std::max(1, threads));
+    std::size_t batch = static_cast<std::size_t>(std::max(1, threads));
+    if (o.gpu) batch = static_cast<std::size_t>(std::max<std::uint64_t>(1, std::min<std::uint64_t>(16384, (std::uint64_t(4) << 30) / bs)));
     std::vector<std::vector<std::uint8_t>> raw(batch);
     std::vector<Block> blocks(batch);
     bool eof = false, ok = true;
@@ -885,6 +964,32 @@ int do_compress(const std::string& in, const std::string& out, Options o) {
         }
         if (std::ferror(fin)) { ok = false; err = (in == "-" ? std::string("stdin") : in) + ": read error"; break; }
         if (!cnt) break;
+#if defined(HPD_GPU)
+        if (o.gpu) {
+            std::vector<BlockPrep> preps(cnt);
+            std::vector<char> need(cnt, 0);
+            if (!parallel_for(cnt, threads, [&](std::size_t j) {
+                    need[j] = compress_prepare(raw[j].data(), raw[j].size(), o.s, blocks[j], preps[j]) ? 1 : 0;
+                })) { ok = false; err = "out of memory"; break; }
+            std::vector<gpu::Task> tasks;
+            std::vector<std::size_t> idx;
+            for (std::size_t j = 0; j < cnt; ++j) {
+                if (!need[j]) continue;
+                gpu::Task t{};
+                t.in = preps[j].kept; t.in_len = preps[j].kept_n; t.n = preps[j].kept_n;
+                t.out_cap = preps[j].kept_n;   // a payload this long is stored anyway
+                t.table_bits = preps[j].cfg.table_bits; t.slot_extra = preps[j].cfg.slot_extra;
+                t.disc_slots = preps[j].cfg.disc_slots; t.out = &blocks[j].data;
+                tasks.push_back(t);
+                idx.push_back(j);
+            }
+            if (!gpu::run(tasks, false)) { ok = false; err = "GPU: " + gpu::g_dev.error; break; }
+            parallel_for(tasks.size(), threads, [&](std::size_t i) {
+                const std::size_t j = idx[i];
+                compress_finish(raw[j].data(), raw[j].size(), blocks[j], preps[j], tasks[i].gave_up);
+            });
+        } else
+#endif
         if (!parallel_for(cnt, threads, [&](std::size_t j) { compress_block(raw[j].data(), raw[j].size(), o.s, blocks[j]); })) {
             ok = false; err = "out of memory (try fewer threads with -t, or smaller blocks with -b)"; break;
         }
@@ -930,6 +1035,12 @@ int do_compress(const std::string& in, const std::string& out, Options o) {
                      block_no == 1 ? "" : "s");
         if (stored || x86) std::fprintf(stderr, " [%d stored, %d x86]", stored, x86);
         if (passed) std::fprintf(stderr, ", %s passed through", human(passed).c_str());
+#if defined(HPD_GPU)
+        if (o.gpu)
+            std::fprintf(stderr, ", GPU %s, %.1f s, %.1f KiB/s\n", gpu::g_dev.name.c_str(), s,
+                         static_cast<double>(total_in) / 1024.0 / (s > 0 ? s : 1));
+        else
+#endif
         std::fprintf(stderr, ", %d thread%s, %.1f s, %.1f KiB/s\n", threads, threads == 1 ? "" : "s", s,
                      static_cast<double>(total_in) / 1024.0 / (s > 0 ? s : 1));
     }
@@ -970,13 +1081,16 @@ int do_decompress(const std::string& in, const std::string& out, const Options& 
     while (!end && ok) {
         // Read a batch: the first block decides how many threads fit in memory.
         blocks.clear();
-        while (!end && blocks.size() < static_cast<std::size_t>(std::max(1, threads))) {
+        const std::size_t want = o.gpu ? 16384 : static_cast<std::size_t>(std::max(1, threads));
+        std::uint64_t batch_raw = 0;
+        while (!end && blocks.size() < want && batch_raw < (std::uint64_t(4) << 30)) {
             Block b;
             if (std::string e = r.next(b, end); !e.empty()) { ok = false; err = e; break; }
             if (end) break;
+            batch_raw += b.raw;
             if (!sized) {
                 sized = true;
-                if (avail && !o.threads_set) {
+                if (avail && !o.threads_set && !o.gpu) {
                     const std::uint64_t per = job_memory(b.method == kCM ? b.table_bits : 16, b.slot_extra, b.raw);
                     threads = static_cast<int>(std::max<std::uint64_t>(1, std::min<std::uint64_t>(threads, avail / 4 * 3 / per)));
                 }
@@ -986,7 +1100,33 @@ int do_decompress(const std::string& in, const std::string& out, const Options& 
         if (!ok || blocks.empty()) break;
         outbuf.resize(blocks.size());
         std::vector<std::string> errs(blocks.size());
-        const bool ran = parallel_for(blocks.size(), threads, [&](std::size_t j) {
+        bool ran = true;
+#if defined(HPD_GPU)
+        if (o.gpu) {
+            std::vector<std::vector<std::uint8_t>> kept(blocks.size());
+            std::vector<gpu::Task> tasks;
+            for (std::size_t j = 0; j < blocks.size(); ++j) {
+                const Block& b = blocks[j];
+                if (b.method != kCM) continue;
+                const std::uint64_t tail = passed_bytes(b);
+                if (tail > b.data.size() || tail > b.raw) { errs[j] = "chunk map does not match the payload"; continue; }
+                gpu::Task t{};
+                t.in = b.data.data(); t.in_len = b.data.size() - tail;
+                t.n = b.raw - tail; t.out_cap = t.n;
+                t.table_bits = b.table_bits; t.slot_extra = b.slot_extra; t.disc_slots = b.disc_slots;
+                t.out = &kept[j];
+                tasks.push_back(t);
+            }
+            if (!gpu::run(tasks, true)) { ok = false; err = "GPU: " + gpu::g_dev.error; break; }
+            ran = parallel_for(blocks.size(), threads, [&](std::size_t j) {
+                outbuf[j].resize(blocks[j].raw);
+                if (!errs[j].empty()) return;
+                errs[j] = blocks[j].method == kCM ? decompress_finish(blocks[j], kept[j], outbuf[j].data())
+                                                  : decompress_block(blocks[j], outbuf[j].data());
+            });
+        } else
+#endif
+        ran = parallel_for(blocks.size(), threads, [&](std::size_t j) {
             outbuf[j].resize(blocks[j].raw);
             errs[j] = decompress_block(blocks[j], outbuf[j].data());
         });
@@ -1101,6 +1241,13 @@ int main(int argc, char** argv) {
         if (a == "-f" || a == "--force") { o.force = true; continue; }
         if (a == "-q" || a == "--quiet") { o.quiet = true; continue; }
         if (a == "-v" || a == "--verbose") { o.verbose = true; continue; }
+        if (a == "-G" || a == "--gpu") {
+#if defined(HPD_GPU)
+            o.gpu = true; continue;
+#else
+            std::fprintf(stderr, "hpd: -G needs the GPU build (hpd-gpu)\n"); return 2;
+#endif
+        }
         if (a == "-h" || a == "--help") { usage(stdout); return 0; }
         if (a == "-V" || a == "--version") { std::printf("%s\n", kVersionText); return 0; }
         // Options with a value: "-t 4" or "-t4".
@@ -1116,7 +1263,7 @@ int main(int argc, char** argv) {
         else if (key == "-b") { good = parse_num(val, 1, kMaxBlock >> 20, v); o.block = static_cast<std::uint64_t>(v) << 20; }
         else if (key == "-B") { good = parse_num(val, 4, kMaxBlock >> 10, v); o.block = static_cast<std::uint64_t>(v) << 10; }
         else if (key == "-m") { good = parse_num(val, 16, kMaxTableBits, v); o.s.force_bits = static_cast<int>(v); }
-        else if (key == "-M") { good = parse_num(val, 16, kMaxTableBits, v); o.s.bits_cap = static_cast<int>(v); }
+        else if (key == "-M") { good = parse_num(val, 16, kMaxTableBits, v); o.s.bits_cap = static_cast<int>(v); o.bits_cap_set = true; }
         else if (key == "-g") { good = parse_num(val, 0, kMaxSlotExtra, v); o.s.slot_extra = static_cast<int>(v); }
         else if (key == "-D") { good = parse_num(val, 1, 12, v); o.s.disc_slots = static_cast<int>(v); }
         else if (key == "-x") { good = parse_num(val, 0, 1, v); o.s.x86_mode = static_cast<int>(v); }

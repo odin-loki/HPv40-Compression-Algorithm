@@ -18,7 +18,21 @@ $(BIN)/hp_lite: src/hp_main.cpp $(wildcard include/hp/*.hpp) | $(BIN)
 test: $(BIN)/hpd
 	bash test/roundtrip.sh $(BIN)/hpd
 
+# hpd-gpu: the same program with -G (model loop on an NVIDIA GPU). Needs clang
+# with CUDA support (tested: clang 23.1 + CUDA 12.4, RTX 3090 = sm_86).
+CLANG     ?= clang++
+CUDA_PATH ?= /usr/local/cuda
+GPU_ARCH  ?= sm_86
+$(BIN)/hpd-gpu: src/hpd.cpp src/hpd_gpu.cuh $(wildcard include/hp/*.hpp) | $(BIN)
+	$(CLANG) -x cuda -std=c++20 -O2 -march=native -DHPD_GPU --cuda-gpu-arch=$(GPU_ARCH) --cuda-path=$(CUDA_PATH) \
+	    -I include src/hpd.cpp -o $@ -L$(CUDA_PATH)/lib64 -lcudart -ldl -lrt -pthread
+
+gpu: $(BIN)/hpd-gpu
+
+gpu-test: $(BIN)/hpd $(BIN)/hpd-gpu
+	bash test/gpu_check.sh $(BIN)/hpd $(BIN)/hpd-gpu
+
 clean:
 	rm -rf $(BIN)
 
-.PHONY: all test clean
+.PHONY: all test clean gpu gpu-test

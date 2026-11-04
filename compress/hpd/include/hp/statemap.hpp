@@ -30,6 +30,7 @@
 // nonstationary sources should forget contradicted evidence rather than
 // average it forever. Cap 20 per side keeps the table small and adaptive.
 
+#include "hp/hd.hpp"
 #include <cstdint>
 #include <vector>
 
@@ -85,9 +86,16 @@ class StateTable {
     std::uint8_t n0_[kStates], n1_[kStates];
 };
 
+#if defined(__CUDACC__)
+__device__ std::uint64_t hp_dev_state[(sizeof(StateTable) + 7) / 8];   // filled by the host
+#endif
 inline const StateTable& state_table() {
+#if defined(__CUDA_ARCH__)
+    return *reinterpret_cast<const StateTable*>(hp_dev_state);
+#else
     static const StateTable t;
     return t;
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -126,7 +134,7 @@ class StateMap {
     }
 
  private:
-    std::vector<std::uint32_t> t_;
+    vec<std::uint32_t> t_;
     std::size_t idx_ = 0;
 };
 
@@ -179,7 +187,17 @@ struct PyTables {
         for (int t = 1; t <= 24; ++t) recip[t] = ((std::uint64_t(1) << 32) / static_cast<std::uint64_t>(2 * t)) + 1;
     }
 };
-inline const PyTables& py_tables() { static const PyTables t; return t; }
+#if defined(__CUDACC__)
+__device__ std::uint64_t hp_dev_py[(sizeof(PyTables) + 7) / 8];   // filled by the host
+#endif
+inline const PyTables& py_tables() {
+#if defined(__CUDA_ARCH__)
+    return *reinterpret_cast<const PyTables*>(hp_dev_py);
+#else
+    static const PyTables t;
+    return t;
+#endif
+}
 
 inline int py_estimate(int n0, int n1, int backoff_p12) {
     if (n0 > 12 || n1 > 12 || backoff_p12 < 0 || backoff_p12 > 4095) return py_estimate_exact(n0, n1, backoff_p12);

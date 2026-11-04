@@ -13,6 +13,7 @@
 //
 // Integer-only. Encoder and decoder share the same bytes.
 
+#include "hp/hd.hpp"
 #include <cstdint>
 #include <vector>
 
@@ -47,7 +48,7 @@ class Branch3 {
     int bin() const { return bin_; }
 
  private:
-    std::vector<std::uint64_t> mask_;
+    vec<std::uint64_t> mask_;
     int bin_ = 0;
 };
 

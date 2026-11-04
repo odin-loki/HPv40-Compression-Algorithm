@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pc_shard_bench.sh FILE [THREADS] — run on OdinsPC under WSL2 (or any Linux) from the Cypha repo root.
+# pc_shard_bench.sh FILE [THREADS] — run on OdinsPC under WSL2 (or any Linux); any working directory.
 # Reports CPU / RAM / NVIDIA GPU, builds hpd, compresses FILE as auto, 16 MiB,
 # 4 MiB, 1 MiB and 256 KiB shards, verifies every round trip, and writes
 # compress/hpd/tools/pc_results.txt — paste that file back into the Claude session.

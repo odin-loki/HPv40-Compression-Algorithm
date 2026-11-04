@@ -25,9 +25,10 @@
 // (y - p) * input, so this is correct gradient descent at every node and
 // needs no chain rule.
 
+#include "hp/hd.hpp"
 #include <cstdint>
 #include <vector>
-#if defined(__AVX2__)
+#if defined(__AVX2__) && !defined(__CUDA_ARCH__)
 #include <immintrin.h>
 #endif
 
@@ -40,7 +41,7 @@ namespace hp {
 inline std::int64_t dot64(const std::int32_t* w, const std::int32_t* x, int n) {
     std::int64_t sum = 0;
     int i = 0;
-#if defined(__AVX2__)
+#if defined(__AVX2__) && !defined(__CUDA_ARCH__)
     __m256i acc = _mm256_setzero_si256();
     for (; i + 8 <= n; i += 8) {
         const __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(w + i));
@@ -61,8 +62,8 @@ class MixerNet {
  public:
     // n_inputs: experts. ctx_sizes: one entry per layer-1 mixer, giving how
     // many weight sets that mixer keeps. ctx2_size: layer-2 weight sets.
-    MixerNet(int n_inputs, const std::vector<int>& ctx_sizes, int ctx2_size, int lr,
-             const std::vector<int>& lrs = {})
+    MixerNet(int n_inputs, const vec<int>& ctx_sizes, int ctx2_size, int lr,
+             const vec<int>& lrs = {})
         : n_(n_inputs), k_(static_cast<int>(ctx_sizes.size())), lr_(lr),
           ctx_sizes_(ctx_sizes), ctx_(ctx_sizes.size(), 0),
           st_(n_inputs, 0), dot_(ctx_sizes.size(), 0),
@@ -140,13 +141,13 @@ class MixerNet {
 
  private:
     int n_, k_, lr_;
-    std::vector<int> ctx_sizes_;
-    std::vector<int> ctx_;
-    std::vector<std::int32_t> st_;
-    std::vector<int> dot_, pr_;
-    std::vector<int> lr1_;                       // per-mixer layer-1 rates
-    std::vector<std::vector<std::int32_t>> w_;  // layer 1
-    std::vector<std::int32_t> v_;               // layer 2
+    vec<int> ctx_sizes_;
+    vec<int> ctx_;
+    vec<std::int32_t> st_;
+    vec<int> dot_, pr_;
+    vec<int> lr1_;                       // per-mixer layer-1 rates
+    vec<vec<std::int32_t>> w_;  // layer 1
+    vec<std::int32_t> v_;               // layer 2
     int m_ = 0;
     int ctx2_ = 0;
     int final_dot_ = 0;
@@ -190,7 +191,7 @@ class APM {
     }
 
  private:
-    std::vector<std::uint16_t> t_;
+    vec<std::uint16_t> t_;
     int idx_ = 0;
 };
 

@@ -16,6 +16,8 @@
 #include <memory>
 #include <utility>
 
+#include "hp/hd.hpp"
+
 #if defined(_WIN32)
 #  ifndef NOMINMAX
 #    define NOMINMAX
@@ -57,6 +59,10 @@ class ZeroArray {
     void allocate(std::size_t n) {
         n_ = n;
         const std::size_t bytes = n * sizeof(T);
+#if defined(__CUDA_ARCH__)
+        p_ = static_cast<T*>(hp_dev_alloc(bytes));   // arena memory is pre-zeroed
+        mapped_ = false;
+#else
         if (bytes >= (std::size_t(1) << 16)) {
 #if defined(_WIN32)
             p_ = static_cast<T*>(VirtualAlloc(nullptr, bytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
@@ -78,9 +84,13 @@ class ZeroArray {
         std::memset(m, 0, rounded ? rounded : 64);
         p_ = static_cast<T*>(m);
         mapped_ = false;
+#endif
     }
     void release() {
         if (!p_) return;
+#if defined(__CUDA_ARCH__)
+        p_ = nullptr; n_ = 0;   // freed with the arena
+#else
         const std::size_t bytes = n_ * sizeof(T);
         if (mapped_) {
 #if defined(_WIN32)
@@ -96,6 +106,7 @@ class ZeroArray {
 #endif
         }
         p_ = nullptr; n_ = 0;
+#endif
     }
 
     T* p_ = nullptr;

@@ -8,6 +8,7 @@
 // not a maximal model zoo. Adding models is the step-2/3 work and it bolts on
 // here without touching the coder or the mixer.
 
+#include "hp/hd.hpp"
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -165,7 +166,9 @@ class ContextModel {
         bidx_ = static_cast<std::size_t>(k >> 24) & (nb_ - 1) & ~std::size_t(1);   // even = line start
         chk_ = static_cast<std::uint16_t>(k | 1u);                              // never 0
 #if defined(__GNUC__) || defined(__clang__)
+#if !defined(__CUDA_ARCH__)
         __builtin_prefetch(&t_[bidx_], 1, 3);
+#endif
 #endif
     }
     void select() {
@@ -265,7 +268,7 @@ class ContextModel {
  private:
     std::uint32_t mask_;
     int limit_;
-    std::vector<std::uint16_t> t_;  // bit-history states (882 states -> 16 bit)
+    vec<std::uint16_t> t_;  // bit-history states (882 states -> 16 bit)
     StateMap sm_;
     std::uint32_t h_ = 0;
     bool idle_ = false;
@@ -301,9 +304,9 @@ class MatchModel {
     // authoritatively, and they decorrelate from each other far more than
     // adjacent context models do.
     MatchModel(int buf_bits, int table_bits, int order = 6,
-               std::shared_ptr<HistoryBuf> hist = nullptr)
+               shared<HistoryBuf> hist = nullptr)
         : order_(order), buf_bits_(buf_bits),
-          hist_(hist ? std::move(hist) : std::make_shared<HistoryBuf>(buf_bits)),
+          hist_(hist ? std::move(hist) : make_shared_hd<HistoryBuf>(buf_bits)),
           buf_mask_(hist_->mask),
           tab_mask_((1u << table_bits) - 1),
           buf_(hist_->a.data()),
@@ -378,12 +381,12 @@ class MatchModel {
  private:
     int order_;
     int buf_bits_;
-    std::shared_ptr<HistoryBuf> hist_;   // must precede buf_mask_ / buf_
+    shared<HistoryBuf> hist_;   // must precede buf_mask_ / buf_
     std::uint32_t buf_mask_;
     std::uint32_t tab_mask_;
     std::uint8_t* buf_;
     ZeroArray<std::uint32_t> tab_;
-    std::vector<Counter> st_;
+    vec<Counter> st_;
     std::uint32_t pos_ = 0;
     std::uint32_t ptr_ = 0;
     int len_ = 0;

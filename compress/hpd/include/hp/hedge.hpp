@@ -44,6 +44,7 @@
 // It is a scalar driving an adaptive rate, which is what an order parameter
 // is actually for.
 
+#include "hp/hd.hpp"
 #include <cstdint>
 #include <vector>
 
@@ -143,8 +144,8 @@ class Hedge {
 
  private:
     int n_;
-    std::vector<std::uint32_t> w_;
-    std::vector<int> p_;
+    vec<std::uint32_t> w_;
+    vec<int> p_;
     int pr_ = 2048;
 };
 

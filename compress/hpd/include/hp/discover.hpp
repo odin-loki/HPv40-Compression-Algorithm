@@ -39,6 +39,7 @@
 // decorrelation by construction rather than by penalty tuning -- avoiding the
 // "learner collusion" failure mode reported for jointly-trained ensembles.
 
+#include "hp/hd.hpp"
 #include <cstdint>
 #include <vector>
 
@@ -193,7 +194,7 @@ class DiscoveryPool {
 
     int n_;
     Rng rng_;
-    std::vector<ContextModel> models_;
+    vec<ContextModel> models_;
     std::uint32_t mask_[kSlots];
     std::uint64_t loss_[kSlots];
     int age_[kSlots];

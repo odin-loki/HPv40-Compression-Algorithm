@@ -12,6 +12,7 @@
 // Steps 1-3 and 5 are IDENTICAL in the compressor and the decompressor, and
 // depend only on data both sides already have.
 
+#include "hp/hd.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <vector>
@@ -58,9 +59,8 @@ namespace hp {
 #endif
 
 // hpd: per-model table cap, relative to table_bits. HP40 let the word tables
-// grow 9 bits past the base (2^31 slots at --mem 22). Set by the Predictor
-// constructor for the thread building it; read only while its models are built.
-inline thread_local int tl_slot_cap = HP_SLOT_MAX;
+// grow 9 bits past the base (2^31 slots at --mem 22). Held by each Predictor
+// (slot_cap_ = table_bits + slot_extra) and read only while its models are built.
 
 struct Config {
     int table_bits = 22;
@@ -128,7 +128,7 @@ class Predictor {
         kNumGates
     };
 
-    static int slot_bits(int base, int delta) {
+    int slot_bits(int base, int delta) const {
         if (delta < 0) delta = 0;
         int b = base + delta;
         if (delta >= 2) b += 1;
@@ -142,7 +142,7 @@ class Predictor {
         if (delta == 1) b += 1;
         if (b < 16) b = 16;
         if (b > HP_SLOT_MAX) b = HP_SLOT_MAX;
-        if (b > tl_slot_cap) b = tl_slot_cap;
+        if (b > slot_cap_) b = slot_cap_;
         return b;
     }
 
@@ -153,17 +153,18 @@ class Predictor {
         return b;
     }
 
-    static int add_bits(int b, int extra) {
+    int add_bits(int b, int extra) const {
         b += extra;
         if (b < 16) b = 16;
         if (b > HP_SLOT_MAX) b = HP_SLOT_MAX;
-        if (b > tl_slot_cap) b = tl_slot_cap;
+        if (b > slot_cap_) b = slot_cap_;
         return b;
     }
 
     explicit Predictor(const Config& cfg)
         : cfg_(cfg),
-          histbuf_((tl_slot_cap = cfg.table_bits + cfg.slot_extra, std::make_shared<HistoryBuf>(cfg.buf_bits))),
+          slot_cap_(cfg.table_bits + cfg.slot_extra),
+          histbuf_(make_shared_hd<HistoryBuf>(cfg.buf_bits)),
 #if HPD_RECORD
           rec_(slot_bits(cfg.table_bits, 0)),
 #endif
@@ -414,8 +415,8 @@ class Predictor {
     int sparse_fraction() const { return sparse_; }
 
  private:
-    static std::vector<int> gate_sizes() {
-        std::vector<int> s = {256, GriaGate::kBuckets, 256, 32,
+    static vec<int> gate_sizes() {
+        vec<int> s = {256, GriaGate::kBuckets, 256, 32,
                               GriaGate::kEntBuckets, 16};
         s.push_back(32);   // wiki state × isParagraph
         s.push_back(PatternCache::kNClass);
@@ -427,11 +428,11 @@ class Predictor {
         return s;
     }
 
-    static std::vector<int> gate_rates(int base) {
+    static vec<int> gate_rates(int base) {
         // Spread inspired by fx2-cmix's 0.0003–0.005, mapped onto hp's
         // integer lr where 2 is the historical shared default.
         (void)base;
-        std::vector<int> r = {2, 3, 2, 4, 3, 4};
+        vec<int> r = {2, 3, 2, 4, 3, 4};
         r.push_back(3);
         r.push_back(3);
         r.push_back(3);
@@ -554,7 +555,8 @@ class Predictor {
     }
 
     Config cfg_;
-    std::shared_ptr<HistoryBuf> histbuf_;   // declared before every model that uses it
+    int slot_cap_;                          // must follow cfg_ and precede every model
+    shared<HistoryBuf> histbuf_;   // declared before every model that uses it
 #if HPD_RECORD
     RecordModel rec_;
 #endif
@@ -574,7 +576,7 @@ class Predictor {
     APM apm_o2_;
 #endif
     Hedge hedge_;
-    std::vector<Counter> bias_;
+    vec<Counter> bias_;
     GriaGate gria_;
     WikiMachine wiki_;
     WordStreams streams_;

@@ -34,7 +34,7 @@ demand-zero memory, a record model, an x86 transform and parallel blocks.
 It is 1.55% smaller than HP40 on the GP set, 5.6× faster and uses 1/18 of
 the memory, and 19.4% smaller than xz -9e on the full Silesia corpus.
 Its source is packaged as
-[`dist/hpd-1.0.0-src.zip`](../../dist/hpd-1.0.0-src.zip) (Part II, §9).
+[`dist/hpd-1.1.0-src.zip`](../../dist/hpd-1.1.0-src.zip) (Part II, §9).
 
 ## Appendix A. Reproducing this paper
 

@@ -49,6 +49,7 @@ A file name of `-` means stdin / stdout, so `tar cf - dir | hpd c - - > dir.tar.
 | `-M bits` | 22 | largest automatic table size (16–24) |
 | `-g bits` | 2 | how far one model's table may grow above the base (0–8) |
 | `-D slots` | 4 | discovery slots (1–12) |
+| `-G` | off | hpd-gpu only: run the model on the NVIDIA GPU, one shard per GPU thread (default 1 MiB shards, `-M 18`). Archives are byte-identical to the CPU build with the same `-B`/`-M` and decode with either. Currently about 2× slower than a 64-thread CPU; see [`GPU_PLAN.md`](GPU_PLAN.md) §9. |
 | `-h`, `-V` | | help, version |
 
 Files are streamed in batches of one block per thread, so memory is bounded
@@ -86,6 +87,17 @@ make test         # round trips: empty, 1 byte, random, repetitive, multi-thread
 bash test/fuzz.sh build/hpd 2000   # mutation fuzzer for the decoder (see the script header for an ASan build)
 ```
 
+GPU build (`build/hpd-gpu`, Linux / WSL2, NVIDIA GPU):
+
+```
+make gpu CLANG=/path/to/clang++ CUDA_PATH=/usr/local/cuda-12.4 GPU_ARCH=sm_86
+make gpu-test     # GPU archive == CPU archive, and each decodes the other's
+```
+
+It needs clang with CUDA support (tested: clang 23.1, CUDA 12.4, RTX 3090).
+The model headers are compiled for the GPU unchanged, through
+`#pragma clang force_cuda_host_device`; nvcc does not support that.
+
 Windows: MinGW-w64 (`x86_64-w64-mingw32-g++ -O2 -mavx2 -std=c++20 -static -I include src/hpd.cpp -o hpd.exe`)
 is tested (under Wine 9): it writes byte-identical archives to the Linux build
 and decodes Linux archives. MSVC should work (`cl /O2 /std:c++20 /arch:AVX2 /EHsc /I include src\hpd.cpp`)
@@ -100,9 +112,13 @@ on one machine decodes on any other.
 | `include/hp/*.hpp` | the model (from HP40-Lite) with the changes above |
 | `include/hp/record.hpp` | record model (new) |
 | `include/hp/zero_array.hpp` | demand-zero arrays, shared history (new) |
+| `include/hp/hd.hpp` | `vec` / `shared`: std containers on the CPU, host/device versions in the GPU build |
+| `src/hpd_gpu.cuh` | hpd-gpu: kernels, per-shard GPU arenas, short launches (`-DHPD_GPU`) |
+| `GPU_PLAN.md` | GPU plan and measured results (P0–P2) |
 | `src/hp_main.cpp` | the original single-stream `hp` CLI on this tree (`make build/hp_lite`) |
 | `test/roundtrip.sh` | round-trip tests |
 | `test/fuzz.sh` | mutation fuzzer for `hpd d` (archive formats 2 and 3) |
+| `test/gpu_check.sh` | GPU build vs CPU build: identical archives, cross-decoding |
 
 ## Archive format (version 3)
 

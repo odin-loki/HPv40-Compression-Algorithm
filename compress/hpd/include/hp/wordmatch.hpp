@@ -11,6 +11,7 @@
 // order = how many completed words are hashed. Smaller tables than the byte
 // match bank — this is a specialist.
 
+#include "hp/hd.hpp"
 #include <cstdint>
 #include <vector>
 
@@ -22,10 +23,10 @@ namespace hp {
 class WordMatchModel {
  public:
     WordMatchModel(int buf_bits, int table_bits, int word_order,
-                   std::shared_ptr<HistoryBuf> hist = nullptr)
+                   shared<HistoryBuf> hist = nullptr)
         : order_(word_order < 1 ? 1 : word_order),
           buf_bits_(buf_bits),
-          hist_(hist ? std::move(hist) : std::make_shared<HistoryBuf>(buf_bits)),
+          hist_(hist ? std::move(hist) : make_shared_hd<HistoryBuf>(buf_bits)),
           buf_mask_(hist_->mask),
           tab_mask_((1u << table_bits) - 1),
           buf_(hist_->a.data()),
@@ -90,12 +91,12 @@ class WordMatchModel {
  private:
     int order_;
     int buf_bits_;
-    std::shared_ptr<HistoryBuf> hist_;   // must precede buf_mask_ / buf_
+    shared<HistoryBuf> hist_;   // must precede buf_mask_ / buf_
     std::uint32_t buf_mask_;
     std::uint32_t tab_mask_;
     std::uint8_t* buf_;
     ZeroArray<std::uint32_t> tab_;
-    std::vector<Counter> st_;
+    vec<Counter> st_;
     std::uint32_t pos_ = 0, ptr_ = 0;
     int len_ = 0, expected_ = 0, sidx_ = 0;
     bool valid_ = false;
