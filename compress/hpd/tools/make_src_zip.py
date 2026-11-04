@@ -3,8 +3,9 @@
 
 Takes every file of compress/hpd/ (plus the repository LICENSE) from the git
 index, so the zip holds exactly what is committed or staged, with LF line
-endings, executable bits kept and a fixed timestamp: the same tree always
-gives the same zip bytes. Prints the zip path, size and SHA-256.
+endings, executable bits kept, a fixed timestamp and no compression (zlib
+builds differ in their output, stored entries do not): the same tree gives
+the same zip bytes on every platform. Prints the zip path, size and SHA-256.
 """
 import hashlib
 import os
@@ -34,10 +35,10 @@ for line in git("ls-files", "-s", "--", "compress/hpd", "LICENSE").decode().spli
     name = path[len("compress/hpd/"):] if path.startswith("compress/hpd/") else path
     entries.append((mode, path, prefix + name))
 
-with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as z:
     for mode, path, name in sorted(entries, key=lambda e: e[2]):
         info = zipfile.ZipInfo(name, date_time=(2026, 11, 4, 0, 0, 0))
-        info.compress_type = zipfile.ZIP_DEFLATED
+        info.compress_type = zipfile.ZIP_STORED
         info.create_system = 3  # unix, so the permission bits are honoured
         info.external_attr = (0o100755 if mode == "100755" else 0o100644) << 16
         z.writestr(info, git("show", ":" + path))

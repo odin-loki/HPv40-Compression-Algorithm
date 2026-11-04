@@ -239,8 +239,8 @@ among CM compressors is not measured here.
 
 The complete hpd source is packaged as
 [`dist/hpd-1.0.0-src.zip`](../../dist/hpd-1.0.0-src.zip)
-(106,316 bytes, 37 files, SHA-256
-`e3567cbfbfa61b2e01530a428445115db956af1b9f1c2eb3edc5000294ef52f5`).
+(300,194 bytes, 37 files, SHA-256
+`2c0500cdb1ea0b3635daf5e26b576119defd103221f0e7a40c30aadc71301b6c`).
 It holds `src/`, `include/hp/`, the Makefile, the README with the archive
 format, the round-trip and fuzz tests, the benchmark runners and the AGPL-3.0
 licence. To build and test:
@@ -252,8 +252,9 @@ build/hpd c FILE && build/hpd t FILE.hpd
 ```
 
 The zip is built from the git tree by `compress/hpd/tools/make_src_zip.py`
-(fixed timestamps, LF line endings), so the same tree always gives the same
-bytes and the hash above can be re-checked.
+(fixed timestamps, LF line endings, entries stored uncompressed), so the
+same tree gives the same bytes on any platform and the hash above can be
+re-checked.
 
 **Version measured vs. version packaged.** The numbers in §§2–7 were
 measured with the archive-format-2 build. hpd 1.0.0 keeps the same model
